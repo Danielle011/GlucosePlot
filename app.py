@@ -71,7 +71,7 @@ def get_activity_color(activity_level):
     base_color = color_map.get(activity_level, '#ACABB0')  # Default to gray if level not found
     rgb = tuple(int(base_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
     
-    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.3)"
+    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]})"
 
 def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selected_meal):
     """Creates an interactive plotly figure with enhanced styling and readability"""
@@ -163,14 +163,14 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
     fig.add_hline(
         y=180,
         line_dash="dot",
-        line_color="rgba(200, 200, 200, 0.6)",
+        line_color="rgba(200, 200, 200)",
         line_width=1,
     )
     
     fig.add_hline(
         y=70,
         line_dash="dot",
-        line_color="rgba(200, 200, 200, 0.6)",
+        line_color="rgba(200, 200, 200)",
         line_width=1,
     )
     
@@ -194,7 +194,7 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
         ),
         xaxis=dict(
             title='Time (minutes from meal)',
-            gridcolor='rgba(0,0,0,0.1)',
+            gridcolor='rgba(0,0,0)',
             showgrid=True,
             zeroline=False,
             ticktext=tick_texts,  # Custom tick labels
@@ -204,7 +204,7 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
         ),
         yaxis=dict(
             title='Blood Glucose (mg/dL)',
-            gridcolor='rgba(0,0,0,0.1)',
+            gridcolor='rgba(0,0,0)',
             showgrid=True,
             zeroline=False,
             title_font=dict(size=12),
