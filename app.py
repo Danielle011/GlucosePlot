@@ -41,64 +41,37 @@ def load_data(glucose_file, meal_file, activity_file):
     # Reset index after filtering
     meal_df = meal_df.reset_index(drop=True)
 
-    # Load activity data
+    # Load activity data with updated structure
     activity_df = pd.read_csv(activity_file, parse_dates=['start_time', 'end_time'], date_parser=parse_datetime_with_timezone)
-    activity_df = activity_df[['start_time', 'end_time', 'steps', 'distance', 'flights']]
+    activity_df = activity_df[[
+        'start_time', 'end_time', 'steps', 'distance', 
+        'flights', 'activity_level'
+    ]]
     activity_df = activity_df.dropna(subset=['start_time', 'end_time'])
     
     return glucose_df, meal_df, activity_df
 
-def get_activity_score(row):
-    """Calculate activity score based on distance and flights"""
-    # Thresholds for distance (km per 10min)
-    distance_thresholds = {
-        'light': 0.5,
-        'moderate': 1.0,
-        'vigorous': 1.5
-    }
-    
-    # Thresholds for flights (per 10min)
-    flights_thresholds = {
-        'light': 2,
-        'moderate': 5,
-        'vigorous': 10
-    }
-    
-    # Calculate individual scores
-    distance_score = (
-        3 if row['distance'] >= distance_thresholds['vigorous'] else
-        2 if row['distance'] >= distance_thresholds['moderate'] else
-        1 if row['distance'] >= distance_thresholds['light'] else 0
-    )
-    
-    flights_score = (
-        3 if row['flights'] >= flights_thresholds['vigorous'] else
-        2 if row['flights'] >= flights_thresholds['moderate'] else
-        1 if row['flights'] >= flights_thresholds['light'] else 0
-    )
-    
-    # Weighted combination (60% distance, 40% flights)
-    return (distance_score * 0.6) + (flights_score * 0.4)
+# Remove these functions as they're no longer needed
+# def get_activity_score(row):  # Remove this
+# def get_activity_color(score): # Replace with new version
 
-def get_activity_color(score):
-    """Returns an interpolated color between #ACABB0 and #E01C34 based on activity score"""
-    # Convert hex to RGB
-    def hex_to_rgb(hex_color):
-        hex_color = hex_color.lstrip('#')
-        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+def get_activity_color(activity_level):
+    """Returns a color based on predefined activity levels"""
+    # Define color mapping for each activity level
+    color_map = {
+        'Inactive': '#ACABB0',    # Light gray
+        'Light': '#C298A0',       # Light pink-gray
+        'Moderate': '#D68591',    # Pink
+        'Active': '#E95F73',      # Light red
+        'Very Active': '#EC3F54', # Bright red
+        'Intense': '#E01C34'      # Deep red
+    }
     
-    start_color = hex_to_rgb('#ACABB0')  # Light gray
-    end_color = hex_to_rgb('#E01C34')    # Red
+    # Get base color and add opacity
+    base_color = color_map.get(activity_level, '#ACABB0')  # Default to gray if level not found
+    rgb = tuple(int(base_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
     
-    # Normalize score to 0-1 range
-    normalized_score = min(1, max(0, score/3))
-    
-    # Linear interpolation between colors
-    r = int(start_color[0] + (end_color[0] - start_color[0]) * normalized_score)
-    g = int(start_color[1] + (end_color[1] - start_color[1]) * normalized_score)
-    b = int(start_color[2] + (end_color[2] - start_color[2]) * normalized_score)
-    
-    return f"rgba({r}, {g}, {b}, 0.3)"
+    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.3)"
 
 def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selected_meal):
     """Creates an interactive plotly figure with enhanced styling and readability"""
