@@ -92,7 +92,7 @@ def get_activity_color(score):
         return f"rgba(255, 0, 0, {0.5 + (min(score-2, 1) * 0.3)})"  # Red
 
 def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selected_meal):
-    """Creates an interactive plotly figure showing glucose levels, meal timing, and activity data."""
+    """Creates an interactive plotly figure with enhanced styling and readability"""
     meal_time = meal_df.loc[selected_meal, 'meal_time']
     next_meal_time = meal_df[meal_df['meal_time'] > meal_time].iloc[0]['meal_time'] if len(meal_df[meal_df['meal_time'] > meal_time]) > 0 else None
     end_time = min(meal_time + pd.Timedelta(hours=2), next_meal_time) if next_meal_time else meal_time + pd.Timedelta(hours=2)
@@ -103,86 +103,87 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
     activity_window = activity_df[(activity_df['start_time'] >= meal_time) & 
                                 (activity_df['end_time'] <= end_time)].copy()
     
-    # Calculate activity scores for the window
+    # Calculate activity scores
     activity_window['activity_score'] = activity_window.apply(get_activity_score, axis=1)
     
     fig = make_subplots(specs=[[{"secondary_y": True}]])
     
-    # Add glucose data
+    # Add glucose data with enhanced hover
     fig.add_trace(
         go.Scatter(
             x=glucose_window['DateTime'],
             y=glucose_window['GlucoseValue'],
             mode='lines+markers',
             name='Glucose',
-            line=dict(color='blue', width=2),
-            hovertemplate='Glucose: %{y:.0f} mg/dL<br>Time: %{x|%H:%M}'
+            line=dict(color='#2C5282', width=2),  # Darker blue for better visibility
+            marker=dict(size=8),
+            hovertemplate=(
+                '<b>Glucose Level</b><br>' +
+                '%{y:.0f} mg/dL<br>' +
+                '<i>Time: %{x|%H:%M}</i><extra></extra>'
+            )
         ),
         secondary_y=False,
     )
     
-    # Add activity data with new color coding
-    for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
+    # Add activity data with improved visuals
+    annotations = []  # Store annotations to manage positioning
+    
+    for idx, activity in activity_window[activity_window['steps'] > 100].iterrows():
         score = activity['activity_score']
         color = get_activity_color(score)
         
-        # Add activity rectangle
-        fig.add_vrect(
-            x0=activity['start_time'],
-            x1=activity['end_time'],
-            fillcolor=color,
-            opacity=0.8,
-            layer="below",
-            line_width=0,
+        # Add activity rectangle with hover info
+        fig.add_trace(
+            go.Scatter(
+                x=[activity['start_time'], activity['start_time'], 
+                   activity['end_time'], activity['end_time']],
+                y=[0, 200, 200, 0],  # Full height rectangle
+                fill='toself',
+                mode='none',
+                name=f'Activity',
+                fillcolor=color,
+                hoverinfo='text',
+                hovertext=(
+                    f'<b>Activity Period</b><br>' +
+                    f'Time: {activity["start_time"].strftime("%H:%M")} - {activity["end_time"].strftime("%H:%M")}<br>' +
+                    f'Steps: {int(activity["steps"])}<br>' +
+                    f'Distance: {activity["distance"]:.2f} km<br>' +
+                    f'Flights: {activity["flights"]:.1f}'
+                ),
+                showlegend=False,
+            ),
+            secondary_y=False,
         )
         
-        # Add activity annotation
-        activity_text = (
-            f"Steps: {int(activity['steps'])}<br>"
-            f"Distance: {activity['distance']:.2f} km<br>"
-            f"Flights: {activity['flights']:.1f}"
-        )
+        # Calculate y-position for annotation to prevent overlap
+        y_pos = glucose_window['GlucoseValue'].max() + (10 * (idx % 3))  # Stagger vertically
         
-        fig.add_annotation(
+        # Create annotation with minimal text
+        annotations.append(dict(
             x=activity['start_time'],
-            y=glucose_window['GlucoseValue'].max(),
-            text=activity_text,
+            y=y_pos,
+            text=f"Steps: {int(activity['steps'])}",
             showarrow=False,
-            yshift=10,
-            font=dict(size=10, color="black"),
-            bgcolor="white",
+            font=dict(size=10, color="#1A365D"),  # Darker color for better readability
+            bgcolor="rgba(255, 255, 255, 0.8)",  # Semi-transparent white background
             bordercolor=color,
             borderwidth=1,
-            opacity=0.8
-        )
-    
-    # Add reference lines
-    fig.add_hline(
-        y=140,
-        line_dash="dash",
-        line_color="red",
-        annotation_text="High",
-        annotation_position="right"
-    )
-    fig.add_hline(
-        y=70,
-        line_dash="dash",
-        line_color="red",
-        annotation_text="Low",
-        annotation_position="right"
-    )
+            borderpad=4,
+            yshift=0
+        ))
     
     # Add meal details annotation
     meal_details = (
-        f"Food: {meal_df.loc[selected_meal, 'food_name']}<br>"
-        f"Calories: {meal_df.loc[selected_meal, 'calories']:.1f} kcal<br>"
-        f"Carbs: {meal_df.loc[selected_meal, 'carbohydrates']:.1f}g<br>"
-        f"Sugar: {meal_df.loc[selected_meal, 'sugars']:.1f}g<br>"
-        f"Protein: {meal_df.loc[selected_meal, 'protein']:.1f}g<br>"
+        f"<b>{meal_df.loc[selected_meal, 'food_name']}</b><br>" +
+        f"Calories: {meal_df.loc[selected_meal, 'calories']:.0f} kcal<br>" +
+        f"Carbs: {meal_df.loc[selected_meal, 'carbohydrates']:.1f}g<br>" +
+        f"Sugar: {meal_df.loc[selected_meal, 'sugars']:.1f}g<br>" +
+        f"Protein: {meal_df.loc[selected_meal, 'protein']:.1f}g<br>" +
         f"Fat: {meal_df.loc[selected_meal, 'fat']:.1f}g"
     )
     
-    fig.add_annotation(
+    annotations.append(dict(
         x=meal_time,
         y=glucose_window['GlucoseValue'].max(),
         text=meal_details,
@@ -190,32 +191,82 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
         arrowhead=2,
         arrowsize=1,
         arrowwidth=2,
-        arrowcolor="#636363",
+        arrowcolor="#4A5568",
         ax=0,
-        ay=-40,
-        bordercolor="#c7c7c7",
-        borderwidth=2,
-        borderpad=4,
-        bgcolor="#ff7f0e",
-        opacity=0.8
+        ay=-60,
+        font=dict(size=11),
+        bgcolor="rgba(255, 255, 255, 0.9)",
+        bordercolor="#4A5568",
+        borderwidth=1,
+        borderpad=8,
+        align='left'
+    ))
+    
+    # Add reference lines with improved styling
+    fig.add_hline(
+        y=140,
+        line_dash="dash",
+        line_color="rgba(245, 101, 101, 0.5)",  # Lighter red
+        annotation=dict(
+            text="High",
+            font=dict(color="#C53030"),
+            xref="paper",
+            x=1.02,
+            showarrow=False
+        )
     )
     
-    # Update layout
+    fig.add_hline(
+        y=70,
+        line_dash="dash",
+        line_color="rgba(245, 101, 101, 0.5)",  # Lighter red
+        annotation=dict(
+            text="Low",
+            font=dict(color="#C53030"),
+            xref="paper",
+            x=1.02,
+            showarrow=False
+        )
+    )
+    
+    # Update layout with improved styling
     fig.update_layout(
-        title=f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d %H:%M")}',
-        xaxis_title='Time',
-        yaxis_title='Blood Glucose (mg/dL)',
-        hovermode="x unified",
+        title=dict(
+            text=f'Blood Glucose Pattern after Meal<br><sup>{meal_time.strftime("%Y-%m-%d %H:%M")}</sup>',
+            font=dict(size=20),
+            y=0.95
+        ),
+        xaxis=dict(
+            title='Time',
+            gridcolor='rgba(0,0,0,0.1)',
+            showgrid=True,
+            zeroline=False,
+            dtick='M30',  # 30-minute intervals
+            tickformat='%H:%M'
+        ),
+        yaxis=dict(
+            title='Blood Glucose (mg/dL)',
+            gridcolor='rgba(0,0,0,0.1)',
+            showgrid=True,
+            zeroline=False,
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='closest',
+        annotations=annotations,
+        showlegend=True,
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="right",
-            x=1
-        )
+            x=1,
+            bgcolor="rgba(255, 255, 255, 0.8)"
+        ),
+        margin=dict(t=100),  # Increased top margin for title
     )
     
-    fig.update_yaxes(range=[0, 200], secondary_y=False)
+    fig.update_yaxes(range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)], secondary_y=False)
     fig.update_xaxes(range=[meal_time, end_time])
     
     return fig
