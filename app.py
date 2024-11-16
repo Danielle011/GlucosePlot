@@ -81,15 +81,19 @@ def get_activity_score(row):
     return (distance_score * 0.6) + (flights_score * 0.4)
 
 def get_activity_color(score):
-    """Returns an RGBA color based on activity score"""
-    if score == 0:
-        return "rgba(200, 200, 200, 0.2)"  # Very light gray for inactive
-    elif score <= 1:
-        return f"rgba(255, 165, 0, {0.3 + score * 0.2})"  # Light orange
-    elif score <= 2:
-        return f"rgba(255, 69, 0, {0.4 + (score-1) * 0.2})"  # Darker orange
-    else:
-        return f"rgba(255, 0, 0, {0.5 + (min(score-2, 1) * 0.3)})"  # Red
+    """Returns an interpolated color between #ACABB0 and #E01C34 based on activity score"""
+    from matplotlib.colors import LinearSegmentedColormap, rgb2hex
+    
+    # Create a custom colormap
+    colors = ['#ACABB0', '#E01C34']
+    cm = LinearSegmentedColormap.from_list('custom', colors)
+    
+    # Normalize score to 0-1 range
+    normalized_score = min(1, max(0, score/3))
+    
+    # Get RGB values and convert to hex
+    rgb_color = cm(normalized_score)
+    return f"rgba({int(rgb_color[0]*255)}, {int(rgb_color[1]*255)}, {int(rgb_color[2]*255)}, 0.3)"
 
 def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selected_meal):
     """Creates an interactive plotly figure with enhanced styling and readability"""
@@ -106,7 +110,11 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
     # Calculate activity scores
     activity_window['activity_score'] = activity_window.apply(get_activity_score, axis=1)
     
-    # Format meal information for subtitle
+    # Add relative time in minutes to glucose data
+    glucose_window = glucose_window.copy()
+    glucose_window['minutes_from_meal'] = ((glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60).round().astype(int)
+    
+    # Format meal information for subtitle with enhanced styling
     meal_data = meal_df.loc[selected_meal]
     meal_subtitle = (
         f"{meal_data['food_name']} | "
@@ -116,30 +124,16 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
         f"Fat: {meal_data['fat']:.1f}g"
     )
     
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig = go.Figure()
     
-    # Add glucose data with enhanced hover
-    fig.add_trace(
-        go.Scatter(
-            x=glucose_window['DateTime'],
-            y=glucose_window['GlucoseValue'],
-            mode='lines+markers',
-            name='Glucose',
-            line=dict(color='black', width=2),  # Changed to black
-            marker=dict(size=6),
-            hovertemplate=(
-                '<b>Time:</b> %{x|%H:%M}<br>' +
-                '<b>Glucose:</b> %{y:.0f} mg/dL<br>' +
-                '<extra></extra>'
-            )
-        ),
-        secondary_y=False,
-    )
-    
-    # Add activity data as background shading with hover info only
+    # Add activity data as background shading
     for idx, activity in activity_window[activity_window['steps'] > 100].iterrows():
         score = activity['activity_score']
         color = get_activity_color(score)
+        
+        # Calculate minutes from meal for activity times
+        start_minutes = int(((activity['start_time'] - meal_time).total_seconds() / 60))
+        end_minutes = int(((activity['end_time'] - meal_time).total_seconds() / 60))
         
         fig.add_trace(
             go.Scatter(
@@ -150,40 +144,70 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
                 mode='none',
                 name='Activity',
                 fillcolor=color,
-                hoverinfo='text',
+                customdata=[[
+                    f"+{start_minutes}",
+                    f"+{end_minutes}",
+                    int(activity["steps"]),
+                    activity["distance"],
+                    int(activity["flights"])
+                ]],
                 hovertemplate=(
                     '<b>Activity Data</b><br>' +
-                    f'Time: {activity["start_time"].strftime("%H:%M")} - {activity["end_time"].strftime("%H:%M")}<br>' +
-                    f'Steps: {int(activity["steps"])}<br>' +
-                    f'Distance: {activity["distance"]:.2f} km<br>' +
-                    f'Flights: {int(activity["flights"])}<extra></extra>'
+                    'Time: %{customdata[0]} min to %{customdata[1]} min<br>' +
+                    'Steps: %{customdata[2]}<br>' +
+                    'Distance: %{customdata[3]:.2f} km<br>' +
+                    'Flights: %{customdata[4]}<extra></extra>'
                 ),
+                hoveron='fills',
                 showlegend=False,
-            ),
-            secondary_y=False,
+            )
         )
     
-    # Add reference lines with improved styling
+    # Add glucose data with enhanced hover
+    fig.add_trace(
+        go.Scatter(
+            x=glucose_window['DateTime'],
+            y=glucose_window['GlucoseValue'],
+            mode='lines+markers',
+            name='Glucose',
+            line=dict(color='#000035', width=1.5),
+            marker=dict(size=5),
+            customdata=glucose_window['minutes_from_meal'],
+            hovertemplate=(
+                '<b>Time:</b> +%{customdata} min<br>' +
+                '<b>Glucose:</b> %{y:.0f} mg/dL<br>' +
+                '<extra></extra>'
+            )
+        )
+    )
+    
+    # Add reference lines
     fig.add_hline(
         y=180,
-        line_dash="dot",  # Shorter dashes
-        line_color="rgba(200, 200, 200, 0.6)",  # Light grey with opacity
+        line_dash="dot",
+        line_color="rgba(200, 200, 200, 0.6)",
         line_width=1,
     )
     
     fig.add_hline(
         y=70,
-        line_dash="dot",  # Shorter dashes
-        line_color="rgba(200, 200, 200, 0.6)",  # Light grey with opacity
+        line_dash="dot",
+        line_color="rgba(200, 200, 200, 0.6)",
         line_width=1,
     )
+    
+    # Create custom tick values every 15 minutes
+    time_range = pd.date_range(start=meal_time, end=end_time, freq='15min')
+    tick_values = time_range.tolist()
+    tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
     
     # Update layout with improved styling
     fig.update_layout(
         title=dict(
             text=(
                 f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
-                f'<span style="font-size: 12px; color: #666666">{meal_subtitle}</span>'
+                f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; padding: 5px; '
+                f'border-radius: 4px; margin-top: 8px; display: inline-block">{meal_subtitle}</span>'
             ),
             font=dict(size=16),
             y=0.95,
@@ -191,12 +215,12 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
             xanchor='left'
         ),
         xaxis=dict(
-            title='Time',
+            title='Time (minutes from meal)',
             gridcolor='rgba(0,0,0,0.1)',
             showgrid=True,
             zeroline=False,
-            dtick='M30',  # 30-minute intervals
-            tickformat='%H:%M',
+            ticktext=tick_texts,  # Custom tick labels
+            tickvals=tick_values,  # Custom tick positions
             title_font=dict(size=12),
             tickfont=dict(size=10)
         ),
@@ -206,7 +230,8 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
             showgrid=True,
             zeroline=False,
             title_font=dict(size=12),
-            tickfont=dict(size=10)
+            tickfont=dict(size=10),
+            range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)]
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
@@ -215,10 +240,7 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
         margin=dict(t=100, l=60, r=20, b=60),
     )
     
-    fig.update_yaxes(
-        range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)], 
-        secondary_y=False
-    )
+    # Set x-axis range
     fig.update_xaxes(range=[meal_time, end_time])
     
     return fig
