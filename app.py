@@ -4,9 +4,9 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import timezone, timedelta
 
+# Set timezone
 KST = timezone(timedelta(hours=9))
 
-# Keep your existing data loading and processing functions
 def parse_datetime_with_timezone(date_string):
     if pd.isna(date_string) or date_string == '0':
         return pd.NaT
@@ -19,35 +19,43 @@ def parse_datetime_with_timezone(date_string):
             return pd.NaT
 
 def load_data(glucose_file, meal_file, activity_file):
-    # Your existing load_data function stays the same
+    """
+    Load and preprocess data files with updated column structures
+    """
+    # Load glucose data
     glucose_df = pd.read_csv(glucose_file, parse_dates=['DateTime'], date_parser=parse_datetime_with_timezone)
     glucose_df = glucose_df[glucose_df['IsInterpolated'] == False]
-    glucose_df = glucose_df[['DateTime', 'GlucoseValue']]
+    glucose_df = glucose_df[['MeasurementNumber', 'DateTime', 'GlucoseValue']]
     glucose_df = glucose_df.dropna(subset=['DateTime'])
 
+    # Load meal data
     meal_df = pd.read_csv(meal_file, parse_dates=['meal_time'], date_parser=parse_datetime_with_timezone)
-    meal_df = meal_df[['meal_time', 'food_name', 'carbohydrates', 'sugars', 'protein', 'fat', 'meal_type']]
+    meal_df = meal_df[[
+        'measurement_number', 'meal_time', 'food_name', 'calories',
+        'carbohydrates', 'sugars', 'protein', 'fat',
+        'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'meal_type'
+    ]]
     meal_df = meal_df.dropna(subset=['meal_time'])
 
+    # Load activity data
     activity_df = pd.read_csv(activity_file, parse_dates=['start_time', 'end_time'], date_parser=parse_datetime_with_timezone)
-    activity_df = activity_df[['start_time', 'end_time', 'steps', 'distance']]
+    activity_df = activity_df[['start_time', 'end_time', 'steps', 'distance', 'flights']]
     activity_df = activity_df.dropna(subset=['start_time', 'end_time'])
     
     return glucose_df, meal_df, activity_df
 
 def get_activity_score(row):
-    """
-    Calculate activity score based on distance and flights
-    """
-    # These thresholds should be adjusted based on your actual data analysis
+    """Calculate activity score based on distance and flights"""
+    # Thresholds for distance (km per 10min)
     distance_thresholds = {
-        'light': 0.5,    # km per 10min
+        'light': 0.5,
         'moderate': 1.0,
         'vigorous': 1.5
     }
     
+    # Thresholds for flights (per 10min)
     flights_thresholds = {
-        'light': 2,      # flights per 10min
+        'light': 2,
         'moderate': 5,
         'vigorous': 10
     }
@@ -69,9 +77,7 @@ def get_activity_score(row):
     return (distance_score * 0.6) + (flights_score * 0.4)
 
 def get_activity_color(score):
-    """
-    Returns an RGBA color based on activity score
-    """
+    """Returns an RGBA color based on activity score"""
     if score == 0:
         return "rgba(200, 200, 200, 0.2)"  # Very light gray for inactive
     elif score <= 1:
@@ -82,9 +88,7 @@ def get_activity_color(score):
         return f"rgba(255, 0, 0, {0.5 + (min(score-2, 1) * 0.3)})"  # Red
 
 def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selected_meal):
-    """
-    Creates an interactive plotly figure showing glucose levels, meal timing, and activity data.
-    """
+    """Creates an interactive plotly figure showing glucose levels, meal timing, and activity data."""
     meal_time = meal_df.loc[selected_meal, 'meal_time']
     next_meal_time = meal_df[meal_df['meal_time'] > meal_time].iloc[0]['meal_time'] if len(meal_df[meal_df['meal_time'] > meal_time]) > 0 else None
     end_time = min(meal_time + pd.Timedelta(hours=2), next_meal_time) if next_meal_time else meal_time + pd.Timedelta(hours=2)
@@ -167,10 +171,11 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
     # Add meal details annotation
     meal_details = (
         f"Food: {meal_df.loc[selected_meal, 'food_name']}<br>"
-        f"Carbs: {meal_df.loc[selected_meal, 'carbohydrates']}g<br>"
-        f"Sugar: {meal_df.loc[selected_meal, 'sugars']}g<br>"
-        f"Protein: {meal_df.loc[selected_meal, 'protein']}g<br>"
-        f"Fat: {meal_df.loc[selected_meal, 'fat']}g"
+        f"Calories: {meal_df.loc[selected_meal, 'calories']:.1f} kcal<br>"
+        f"Carbs: {meal_df.loc[selected_meal, 'carbohydrates']:.1f}g<br>"
+        f"Sugar: {meal_df.loc[selected_meal, 'sugars']:.1f}g<br>"
+        f"Protein: {meal_df.loc[selected_meal, 'protein']:.1f}g<br>"
+        f"Fat: {meal_df.loc[selected_meal, 'fat']:.1f}g"
     )
     
     fig.add_annotation(
@@ -211,7 +216,6 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
     
     return fig
 
-# New Streamlit app code
 def run_streamlit_app():
     st.title('Blood Glucose Analysis Dashboard')
     
@@ -223,13 +227,13 @@ def run_streamlit_app():
     
     if all([glucose_file, meal_file, activity_file]):
         # Load data
-        glucose_df, meal_df, activity_df, features_df = load_data(
+        glucose_df, meal_df, activity_df = load_data(
             glucose_file, meal_file, activity_file
         )
         
-        # Create meal selection dropdown
+        # Create meal selection dropdown grouped by measurement number
         meal_options = {
-            f"{meal['meal_time'].tz_convert(KST).strftime('%Y-%m-%d %H:%M')} - {meal['food_name']}": i 
+            f"#{meal['measurement_number']} - {meal['meal_time'].tz_convert(KST).strftime('%Y-%m-%d %H:%M')} - {meal['food_name']}": i 
             for i, meal in meal_df.iterrows()
         }
         
@@ -247,15 +251,31 @@ def run_streamlit_app():
         
         st.plotly_chart(fig, use_container_width=True)
         
-        # Display additional meal information
-        st.subheader('Meal Details')
+        # Display detailed meal information
+        st.subheader('Detailed Meal Information')
         meal_data = meal_df.loc[selected_meal_idx]
-        st.write(f"Food: {meal_data['food_name']}")
-        st.write(f"Carbohydrates: {meal_data['carbohydrates']}g")
-        st.write(f"Sugars: {meal_data['sugars']}g")
-        st.write(f"Protein: {meal_data['protein']}g")
-        st.write(f"Fat: {meal_data['fat']}g")
-
+        
+        # Create two columns for better layout
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("Basic Information:")
+            st.write(f"Food: {meal_data['food_name']}")
+            st.write(f"Meal Type: {meal_data['meal_type']}")
+            st.write(f"Calories: {meal_data['calories']:.1f} kcal")
+            st.write(f"Measurement Number: {meal_data['measurement_number']}")
+            
+        with col2:
+            st.write("Nutritional Information:")
+            st.write(f"Carbohydrates: {meal_data['carbohydrates']:.1f}g")
+            st.write(f"Sugars: {meal_data['sugars']:.1f}g")
+            st.write(f"Protein: {meal_data['protein']:.1f}g")
+            st.write(f"Total Fat: {meal_data['fat']:.1f}g")
+            st.write(f"- Saturated Fat: {meal_data['saturated_fat']:.1f}g")
+            st.write(f"- Trans Fat: {meal_data['trans_fat']:.1f}g")
+            st.write(f"Cholesterol: {meal_data['cholesterol']:.1f}mg")
+            st.write(f"Sodium: {meal_data['sodium']:.1f}mg")
+        
     else:
         st.info('Please upload all data files to begin analysis.')
 
