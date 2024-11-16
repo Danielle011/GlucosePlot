@@ -82,18 +82,23 @@ def get_activity_score(row):
 
 def get_activity_color(score):
     """Returns an interpolated color between #ACABB0 and #E01C34 based on activity score"""
-    from matplotlib.colors import LinearSegmentedColormap, rgb2hex
+    # Convert hex to RGB
+    def hex_to_rgb(hex_color):
+        hex_color = hex_color.lstrip('#')
+        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
     
-    # Create a custom colormap
-    colors = ['#ACABB0', '#E01C34']
-    cm = LinearSegmentedColormap.from_list('custom', colors)
+    start_color = hex_to_rgb('#ACABB0')  # Light gray
+    end_color = hex_to_rgb('#E01C34')    # Red
     
     # Normalize score to 0-1 range
     normalized_score = min(1, max(0, score/3))
     
-    # Get RGB values and convert to hex
-    rgb_color = cm(normalized_score)
-    return f"rgba({int(rgb_color[0]*255)}, {int(rgb_color[1]*255)}, {int(rgb_color[2]*255)}, 0.3)"
+    # Linear interpolation between colors
+    r = int(start_color[0] + (end_color[0] - start_color[0]) * normalized_score)
+    g = int(start_color[1] + (end_color[1] - start_color[1]) * normalized_score)
+    b = int(start_color[2] + (end_color[2] - start_color[2]) * normalized_score)
+    
+    return f"rgba({r}, {g}, {b}, 0.3)"
 
 def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selected_meal):
     """Creates an interactive plotly figure with enhanced styling and readability"""
