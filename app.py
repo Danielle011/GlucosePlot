@@ -18,7 +18,7 @@ def parse_datetime_with_timezone(date_string):
         except ValueError:
             return pd.NaT
 
-def load_data(glucose_file, meal_file, activity_file, features_file):
+def load_data(glucose_file, meal_file, activity_file):
     # Your existing load_data function stays the same
     glucose_df = pd.read_csv(glucose_file, parse_dates=['DateTime'], date_parser=parse_datetime_with_timezone)
     glucose_df = glucose_df[glucose_df['IsInterpolated'] == False]
@@ -32,11 +32,8 @@ def load_data(glucose_file, meal_file, activity_file, features_file):
     activity_df = pd.read_csv(activity_file, parse_dates=['start_time', 'end_time'], date_parser=parse_datetime_with_timezone)
     activity_df = activity_df[['start_time', 'end_time', 'steps', 'distance']]
     activity_df = activity_df.dropna(subset=['start_time', 'end_time'])
-
-    features_df = pd.read_csv(features_file, parse_dates=['meal_time'], date_parser=parse_datetime_with_timezone)
-    features_df = features_df.dropna(subset=['meal_time'])
     
-    return glucose_df, meal_df, activity_df, features_df
+    return glucose_df, meal_df, activity_df
 
 def get_activity_score(row):
     """
@@ -214,8 +211,6 @@ def create_glucose_meal_activity_chart(glucose_df, meal_df, activity_df, selecte
     
     return fig
 
-
-
 # New Streamlit app code
 def run_streamlit_app():
     st.title('Blood Glucose Analysis Dashboard')
@@ -225,12 +220,11 @@ def run_streamlit_app():
     glucose_file = st.sidebar.file_uploader("Upload Glucose Data", type=['csv'])
     meal_file = st.sidebar.file_uploader("Upload Meal Data", type=['csv'])
     activity_file = st.sidebar.file_uploader("Upload Activity Data", type=['csv'])
-    features_file = st.sidebar.file_uploader("Upload Features Data", type=['csv'])
     
-    if all([glucose_file, meal_file, activity_file, features_file]):
+    if all([glucose_file, meal_file, activity_file]):
         # Load data
         glucose_df, meal_df, activity_df, features_df = load_data(
-            glucose_file, meal_file, activity_file, features_file
+            glucose_file, meal_file, activity_file
         )
         
         # Create meal selection dropdown
@@ -248,7 +242,7 @@ def run_streamlit_app():
         
         # Create and display the plot
         fig = create_glucose_meal_activity_chart(
-            glucose_df, meal_df, activity_df, features_df, selected_meal_idx
+            glucose_df, meal_df, activity_df, selected_meal_idx
         )
         
         st.plotly_chart(fig, use_container_width=True)
