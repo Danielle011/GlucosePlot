@@ -35,7 +35,11 @@ def load_data(glucose_file, meal_file, activity_file):
         'carbohydrates', 'sugars', 'protein', 'fat',
         'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'meal_type'
     ]]
+    # Filter out snacks
+    meal_df = meal_df[meal_df['meal_type'] != 'Snack']
     meal_df = meal_df.dropna(subset=['meal_time'])
+    # Reset index after filtering
+    meal_df = meal_df.reset_index(drop=True)
 
     # Load activity data
     activity_df = pd.read_csv(activity_file, parse_dates=['start_time', 'end_time'], date_parser=parse_datetime_with_timezone)
