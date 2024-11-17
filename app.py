@@ -631,7 +631,7 @@ def run_streamlit_app():
                     end_time,
                     0
                 )
-                st.plotly_chart(fig1, use_container_width=True)
+                st.plotly_chart(fig1, use_container_width=True, key="plot1")
             
             with tab2:
                 # Activity level legend for bars
@@ -659,7 +659,7 @@ def run_streamlit_app():
                     end_time,
                     0
                 )
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, use_container_width=True, key="plot2" )
             
             with tab3:
                 # Activity level legend for bars with markers
@@ -687,7 +687,7 @@ def run_streamlit_app():
                     end_time,
                     0
                 )
-                st.plotly_chart(fig3, use_container_width=True)
+                st.plotly_chart(fig3, use_container_width=True, key="plot3" )
             
             if not activity_window.empty:
                 st.sidebar.markdown("### Activity")
