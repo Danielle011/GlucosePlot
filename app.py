@@ -77,14 +77,30 @@ def get_activity_color_gradient(activity_level):
     opacity = level_map.get(activity_level, 0.1)
     return f"rgba(255, 0, 0, {opacity})"
 
-# First, add a helper function to format time in 12-hour format
 def format_time_12hr(dt):
     """Convert datetime to 12-hour format string"""
     return dt.strftime("%I:%M %p").lstrip("0")
 
-# Update the activity trace in create_glucose_meal_activity_chart_gradient function
 def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
-    # ... (previous code remains same until activity trace) ...
+    """Creates chart with gradient colors for activities"""
+    meal_time = meal_data.iloc[selected_idx]['meal_time']
+    
+    # Add relative time in minutes to glucose data
+    glucose_window['minutes_from_meal'] = (
+        (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
+    ).round().astype(int)
+    
+    # Format meal information for subtitle
+    meal = meal_data.iloc[selected_idx]
+    meal_subtitle = (
+        f"{meal['food_name']} | "
+        f"Calories: {meal['calories']:.0f} | "
+        f"Carbs: {meal['carbohydrates']:.1f}g | "
+        f"Protein: {meal['protein']:.1f}g | "
+        f"Fat: {meal['fat']:.1f}g"
+    )
+    
+    fig = go.Figure()
     
     # Add activity data as background shading with gradient colors
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
