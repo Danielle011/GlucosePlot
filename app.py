@@ -25,14 +25,14 @@ def load_dashboard_data():
     Load and preprocess data files from the repository
     """
     # Load glucose data
-    glucose_df = pd.read_csv('data/glucose_data.csv', parse_dates=['DateTime'], 
+    glucose_df = pd.read_csv('data/processed_glucose_data.csv', parse_dates=['DateTime'], 
                             date_parser=parse_datetime_with_timezone)
     glucose_df = glucose_df[glucose_df['IsInterpolated'] == False]
     glucose_df = glucose_df[['MeasurementNumber', 'DateTime', 'GlucoseValue']]
     glucose_df = glucose_df.dropna(subset=['DateTime'])
 
     # Load meal data
-    meal_df = pd.read_csv('data/meal_data.csv', parse_dates=['meal_time'], 
+    meal_df = pd.read_csv('data/processed_meal_data.csv', parse_dates=['meal_time'], 
                          date_parser=parse_datetime_with_timezone)
     meal_df = meal_df[[
         'measurement_number', 'meal_time', 'food_name', 'calories',
@@ -44,7 +44,7 @@ def load_dashboard_data():
     meal_df = meal_df.reset_index(drop=True)
 
     # Load activity data
-    activity_df = pd.read_csv('data/activity_data.csv', parse_dates=['start_time', 'end_time'], 
+    activity_df = pd.read_csv('data/activity_data_with_levels.csv', parse_dates=['start_time', 'end_time'], 
                              date_parser=parse_datetime_with_timezone)
     activity_df = activity_df[[
         'start_time', 'end_time', 'steps', 'distance', 
