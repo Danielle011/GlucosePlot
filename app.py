@@ -26,6 +26,20 @@ def load_full_meal_data():
         parse_dates=['meal_time']
     )
 
+@st.cache_data(ttl=3600)
+def load_meal_data():
+    """Load and preprocess meal data, excluding snacks"""
+    meal_df = load_full_meal_data()
+    return meal_df[meal_df['meal_type'] != 'Snack'].reset_index(drop=True)
+
+@st.cache_data(ttl=3600)
+def load_activity_data():
+    """Load and preprocess activity data"""
+    return pd.read_csv(
+        'data/activity_data_with_levels.csv',
+        parse_dates=['start_time', 'end_time']
+    )
+
 @st.cache_data
 def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number, full_meal_df):
     """Efficiently get relevant glucose and activity data for a specific meal"""
