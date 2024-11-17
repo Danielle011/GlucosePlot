@@ -355,16 +355,19 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     return fig
 
 def run_streamlit_app():
-    full_meal_df = load_full_meal_data()
+    # This must be the first Streamlit command
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
+    
+    # Now we can proceed with loading data and other operations
     st.title('Blood Glucose Analysis Dashboard')
     
     try:
         # Load data with progress indicators
-        with st.spinner('Loading data...'):  # This line starts a block
-            glucose_df = load_glucose_data()  # These lines should be
-            meal_df = load_meal_data()        # indented under the
-            activity_df = load_activity_data() # 'with' statement
+        with st.spinner('Loading data...'):
+            glucose_df = load_glucose_data()
+            meal_df = load_meal_data()
+            activity_df = load_activity_data()
+            full_meal_df = load_full_meal_data()  # Added for window calculation
         
         st.sidebar.markdown("### Dataset Information")
         date_min = meal_df['meal_time'].dt.date.min()
