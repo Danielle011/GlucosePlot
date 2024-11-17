@@ -25,9 +25,8 @@ def load_dashboard_data():
     Load and preprocess data files from the repository
     """
     # Load glucose data
-    glucose_df = pd.read_csv('data/processed_glucose_data.csv', parse_dates=['DateTime'], 
+    glucose_df = pd.read_csv('data/original_glucose_data.csv', parse_dates=['DateTime'], 
                             date_parser=parse_datetime_with_timezone)
-    glucose_df = glucose_df[glucose_df['IsInterpolated'] == False]
     glucose_df = glucose_df[['MeasurementNumber', 'DateTime', 'GlucoseValue']]
     glucose_df = glucose_df.dropna(subset=['DateTime'])
 
