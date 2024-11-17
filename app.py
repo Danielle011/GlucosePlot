@@ -206,10 +206,23 @@ def create_glucose_activity_bars_numbers(glucose_window, meal_data, activity_win
 
 def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
     """Creates chart with bars and flight markers"""
-    # Similar to the function above but with different flight visualization
     meal_time = meal_data.iloc[selected_idx]['meal_time']
     
-    # ... (same initial setup as above) ...
+    # Add relative time in minutes to glucose data
+    glucose_window = glucose_window.copy()
+    glucose_window['minutes_from_meal'] = (
+        (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
+    ).round().astype(int)
+    
+    # Format meal information for subtitle
+    meal = meal_data.iloc[selected_idx]
+    meal_subtitle = (
+        f"{meal['food_name']} | "
+        f"Calories: {meal['calories']:.0f} | "
+        f"Carbs: {meal['carbohydrates']:.1f}g | "
+        f"Protein: {meal['protein']:.1f}g | "
+        f"Fat: {meal['fat']:.1f}g"
+    )
     
     fig = go.Figure()
     
@@ -217,12 +230,12 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
         color = get_activity_color_gradient(activity['activity_level'])
         
-        # Add bar for steps (same as above)
+        # Add bar for steps
         fig.add_trace(
             go.Bar(
                 x=[activity['start_time'] + (activity['end_time'] - activity['start_time'])/2],
                 y=[activity['steps']],
-                width=600000,
+                width=600000,  # 10 minutes in milliseconds
                 marker_color=color,
                 name='Activity',
                 hovertemplate=(
@@ -256,7 +269,7 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
                     yaxis='y2'
                 )
             )
-
+    
     # Add glucose line
     fig.add_trace(
         go.Scatter(
@@ -274,7 +287,7 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
             )
         )
     )
-
+    
     # Add reference lines
     fig.add_hline(y=180, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
     fig.add_hline(y=70, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
@@ -335,7 +348,7 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
     fig.update_xaxes(range=[meal_time, end_time])
     
     return fig
-    
+        
 def get_activity_color_gradient(activity_level):
     """Returns a color based on activity level using a gradient scale"""
     level_map = {
