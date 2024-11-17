@@ -19,13 +19,39 @@ def load_glucose_data():
     )
 
 @st.cache_data(ttl=3600)
-def load_meal_data():
-    """Load and preprocess meal data"""
-    meal_df = pd.read_csv(
+def load_full_meal_data():
+    """Load meal data including snacks"""
+    return pd.read_csv(
         'data/processed_meal_data.csv',
         parse_dates=['meal_time']
     )
-    return meal_df[meal_df['meal_type'] != 'Snack'].reset_index(drop=True)
+
+@st.cache_data
+def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number, full_meal_df):
+    """Efficiently get relevant glucose and activity data for a specific meal"""
+    # Find the next meal time (including snacks)
+    next_meal = full_meal_df[full_meal_df['meal_time'] > meal_time].iloc[0] if not full_meal_df[full_meal_df['meal_time'] > meal_time].empty else None
+    
+    # Set end time based on next meal or default 2-hour window
+    if next_meal is not None and (next_meal['meal_time'] - meal_time) <= pd.Timedelta(hours=2):
+        end_time = next_meal['meal_time']
+    else:
+        end_time = meal_time + pd.Timedelta(hours=2)
+    
+    # Get glucose data for this meal
+    glucose_window = glucose_df[
+        (glucose_df['MeasurementNumber'] == meal_number) &
+        (glucose_df['DateTime'] >= meal_time) & 
+        (glucose_df['DateTime'] <= end_time)
+    ].copy()
+    
+    # Get activity data for this meal
+    activity_window = activity_df[
+        (activity_df['start_time'] >= meal_time) & 
+        (activity_df['end_time'] <= end_time)
+    ].copy()
+    
+    return glucose_window, activity_window, end_time
 
 @st.cache_data(ttl=3600)
 def load_activity_data():
@@ -59,8 +85,8 @@ def get_activity_color_gradient(activity_level):
     """Returns a color based on activity level using a gradient scale"""
     level_map = {
         'Inactive': 0.1,
-        'Light': 0.3,
-        'Moderate': 0.5,
+        'Light': 0.2,
+        'Moderate': 0.3,
         'Active': 0.7,
         'Very Active': 0.85,
         'Intense': 1.0
@@ -68,8 +94,8 @@ def get_activity_color_gradient(activity_level):
     opacity = level_map.get(activity_level, 0.1)
     return f"rgba(255, 0, 0, {opacity})"
 
-def create_glucose_meal_activity_chart(glucose_window, meal_data, activity_window, selected_idx=0):
-    """Creates an interactive plotly figure with original color scheme"""
+def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
+    """Creates chart with gradient colors for activities"""
     meal_time = meal_data.iloc[selected_idx]['meal_time']
     end_time = meal_time + pd.Timedelta(hours=2)
     
@@ -329,6 +355,7 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     return fig
 
 def run_streamlit_app():
+    full_meal_df = load_full_meal_data()
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     st.title('Blood Glucose Analysis Dashboard')
     
@@ -381,12 +408,12 @@ def run_streamlit_app():
             selected_meal_idx = meal_options[selected_meal_label]
             selected_meal = meals_filtered.loc[selected_meal_idx]
             
-            # Get data for selected meal
-            glucose_window, activity_window = get_data_for_meal(
+            glucose_window, activity_window, end_time = get_data_for_meal(
                 glucose_df, 
                 activity_df,
                 selected_meal['meal_time'],
-                selected_meal['measurement_number']
+                selected_meal['measurement_number'],
+                full_meal_df
             )
 
             # Create container for activity level legend
@@ -423,6 +450,11 @@ def run_streamlit_app():
             # Display meal information
             st.sidebar.subheader('Meal Information')
             
+            # Calculate and display window duration
+            window_duration = (end_time - selected_meal['meal_time']).total_seconds() / 60
+            st.sidebar.markdown("### Window Information")
+            st.sidebar.markdown(f"- Duration: {window_duration:.0f} minutes")
+            
             # Calculate glucose metrics
             initial_glucose = glucose_window.iloc[0]['GlucoseValue']
             peak_glucose = glucose_window['GlucoseValue'].max()
@@ -446,12 +478,12 @@ def run_streamlit_app():
                 st.sidebar.markdown("### Activity")
                 for _, activity in activity_window.iterrows():
                     minutes_from_meal = (activity['start_time'] - 
-                                       selected_meal['meal_time']).total_seconds() / 60
+                                    selected_meal['meal_time']).total_seconds() / 60
                     st.sidebar.markdown(
                         f"- At +{minutes_from_meal:.0f} min:\n"
                         f"  - Steps: {activity['steps']:,}\n"
                         f"  - Level: {activity['activity_level']}"
-                    )
+                    )            
         else:
             st.info('No meals found in the selected date range.')
             
