@@ -350,13 +350,11 @@ def run_streamlit_app():
     
     try:
         # Load data with progress indicators
-        with st.spinner('Loading data...'):
-
-glucose_df = load_glucose_data()
-            meal_df = load_meal_data()
-            activity_df = load_activity_data()
-        
-        # Add date filter in sidebar
+        with st.spinner('Loading data...'):  # This line starts a block
+            glucose_df = load_glucose_data()  # These lines should be
+            meal_df = load_meal_data()        # indented under the
+            activity_df = load_activity_data() # 'with' statement
+            
         st.sidebar.markdown("### Dataset Information")
         date_min = meal_df['meal_time'].dt.date.min()
         date_max = meal_df['meal_time'].dt.date.max()
