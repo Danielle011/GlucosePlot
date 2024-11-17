@@ -102,8 +102,16 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     
     fig = go.Figure()
     
-    # Add activity data as background shading with gradient colors
+    # Add at the beginning of the activity loop
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
+        print("Activity data:", {
+            'start_time': activity['start_time'],
+            'end_time': activity['end_time'],
+            'steps': activity['steps'],
+            'distance': activity['distance'],
+            'flights': activity['flights'],
+            'level': activity['activity_level']
+        })
         color = get_activity_color_gradient(activity['activity_level'])
         
         # Format start and end times
