@@ -102,24 +102,12 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     
     fig = go.Figure()
     
-    # Add at the beginning of the activity loop
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
-        print("Activity data:", {
-            'start_time': activity['start_time'],
-            'end_time': activity['end_time'],
-            'steps': activity['steps'],
-            'distance': activity['distance'],
-            'flights': activity['flights'],
-            'level': activity['activity_level']
-        })
         color = get_activity_color_gradient(activity['activity_level'])
         
         # Format start and end times
         start_time_str = format_time_12hr(activity['start_time'])
         end_time_str = format_time_12hr(activity['end_time'])
-        
-        # Format steps with thousand separator
-        steps_str = f"{int(activity['steps']):,}"
         
         fig.add_trace(
             go.Scatter(
@@ -130,30 +118,29 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
                 mode='none',
                 name='Activity',
                 fillcolor=color,
-                customdata=[[
+                customdata=np.array([[
                     start_time_str,
                     end_time_str,
-                    steps_str,
-                    activity["distance"],
-                    int(activity["flights"]),
-                    activity["activity_level"],
-                    color  # Pass color to use in hover template
-                ]],
-                hovertemplate=(
-                    '<br>'.join([
-                        '<b>%{customdata[0]} - %{customdata[1]}</b>',
-                        '<b>Steps:</b> %{customdata[2]} steps',
-                        '<b>Distance:</b> %{customdata[3]:.1f} km',
-                        '<b>Flights:</b> %{customdata[4]} flights',
-                        '<span style="display: inline-block; margin-top: 5px; padding: 2px 6px; ' +
-                        'border-radius: 3px; background-color: %{customdata[6]}; color: white;">' +
-                        '%{customdata[5]}</span>'
-                    ]) + '<extra></extra>'
+                    f"{int(activity['steps']):,}",
+                    f"{activity['distance']:.1f}",
+                    str(int(activity['flights'])),
+                    activity['activity_level'],
+                    color
+                ]] * 4),  # Repeat the data 4 times for each vertex
+                hoverinfo='text',
+                hovertext=(
+                    f"{start_time_str} - {end_time_str}<br>" +
+                    f"Steps: {int(activity['steps']):,} steps<br>" +
+                    f"Distance: {activity['distance']:.1f} km<br>" +
+                    f"Flights: {int(activity['flights'])} flights<br>" +
+                    f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 3px;'>" +
+                    f"{activity['activity_level']}</span>"
                 ),
                 hoveron='fills',
                 showlegend=False,
             )
         )
+    
     
     # Add glucose data
     fig.add_trace(
