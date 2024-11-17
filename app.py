@@ -102,14 +102,12 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     )
     
     fig = go.Figure()
-    
+
+    # Add activity data as background shading with gradient colors
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
         color = get_activity_color_gradient(activity['activity_level'])
         
-        # Format start and end times
-        start_time_str = format_time_12hr(activity['start_time'])
-        end_time_str = format_time_12hr(activity['end_time'])
-        
+        # Create background shade
         fig.add_trace(
             go.Scatter(
                 x=[activity['start_time'], activity['start_time'], 
@@ -117,31 +115,46 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
                 y=[0, 200, 200, 0],
                 fill='toself',
                 mode='none',
-                name='Activity',
-                fillcolor=color,
-                customdata=np.array([[
-                    start_time_str,
-                    end_time_str,
-                    f"{int(activity['steps']):,}",
-                    f"{activity['distance']:.1f}",
-                    str(int(activity['flights'])),
-                    activity['activity_level'],
-                    color
-                ]] * 4),  # Repeat the data 4 times for each vertex
-                hoverinfo='text',
-                hovertext=(
-                    f"{start_time_str} - {end_time_str}<br>" +
-                    f"Steps: {int(activity['steps']):,} steps<br>" +
-                    f"Distance: {activity['distance']:.1f} km<br>" +
-                    f"Flights: {int(activity['flights'])} flights<br>" +
-                    f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 3px;'>" +
-                    f"{activity['activity_level']}</span>"
-                ),
-                hoveron='fills',
                 showlegend=False,
+                fillcolor=color,
+                hoverinfo='skip'  # Disable hover for the shade
             )
         )
-    
+        
+        # Create hover points: Generate 5 evenly spaced points during the activity
+        hover_times = pd.date_range(
+            start=activity['start_time'],
+            end=activity['end_time'],
+            periods=5
+        )
+        
+        # Format hover text
+        hover_text = (
+            f"{format_time_12hr(activity['start_time'])} - {format_time_12hr(activity['end_time'])}<br>" +
+            f"Steps: {int(activity['steps']):,} steps<br>" +
+            f"Distance: {activity['distance']:.1f} km<br>" +
+            f"Flights: {int(activity['flights'])} flights<br>" +
+            f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 3px;'>" +
+            f"{activity['activity_level']}</span>"
+        )
+        
+        # Add invisible hover points
+        fig.add_trace(
+            go.Scatter(
+                x=hover_times,
+                y=[100] * len(hover_times),  # Place points in middle of y-range
+                mode='markers',
+                marker=dict(
+                    size=20,
+                    color='rgba(0,0,0,0)',  # Invisible markers
+                    symbol='square',  # Larger hover area
+                ),
+                hoverinfo='text',
+                hovertext=hover_text,
+                showlegend=False,
+                name='',  # Empty name to avoid legend entry
+            )
+        )
     
     # Add glucose data
     fig.add_trace(
@@ -160,7 +173,7 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
             )
         )
     )
-    
+
     # Add reference lines
     fig.add_hline(y=180, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
     fig.add_hline(y=70, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
