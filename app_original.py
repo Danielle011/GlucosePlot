@@ -9,6 +9,16 @@ from pathlib import Path
 # Set timezone
 KST = timezone(timedelta(hours=9))
 
+# Predefined color map for better performance
+ACTIVITY_COLOR_MAP = {
+    'Inactive': '#ACABB0',    # Light gray
+    'Light': '#C298A0',       # Light pink-gray
+    'Moderate': '#D68591',    # Pink
+    'Active': '#E95F73',      # Light red
+    'Very Active': '#EC3F54', # Bright red
+    'Intense': '#E01C34'      # Deep red
+}
+
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def load_glucose_data():
     """Load pre-filtered glucose data"""
@@ -54,6 +64,12 @@ def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number):
     ].copy()
     
     return glucose_window, activity_window
+
+def get_activity_color(activity_level):
+    """Returns a color based on predefined activity levels"""
+    base_color = ACTIVITY_COLOR_MAP.get(activity_level, ACTIVITY_COLOR_MAP['Inactive'])
+    rgb = tuple(int(base_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.3)"
 
 def get_activity_color_gradient(activity_level):
     """Returns a color based on activity level using a gradient scale"""
@@ -393,6 +409,15 @@ def run_streamlit_app():
             st.markdown("### Activity Level Color Guide")
             legend_col1, legend_col2 = st.columns(2)
             
+            with legend_col1:
+                st.markdown("**Original Color Scheme:**")
+                for level, color in ACTIVITY_COLOR_MAP.items():
+                    st.markdown(
+                        f'<div style="background-color: {color}; padding: 5px; '
+                        f'margin: 2px; border-radius: 3px;">{level}</div>',
+                        unsafe_allow_html=True
+                    )
+            
             with legend_col2:
                 st.markdown("**Gradient Color Scheme:**")
                 level_map = {
@@ -409,6 +434,16 @@ def run_streamlit_app():
                         f'margin: 2px; border-radius: 3px;">{level}</div>',
                         unsafe_allow_html=True
                     )
+            
+            # Display original color scheme plot
+            st.subheader("Original Color Scheme")
+            fig1 = create_glucose_meal_activity_chart(
+                glucose_window, 
+                pd.DataFrame([selected_meal]), 
+                activity_window, 
+                0
+            )
+            st.plotly_chart(fig1, use_container_width=True)
             
             # Display gradient color scheme plot
             st.subheader("Gradient Color Scheme")
