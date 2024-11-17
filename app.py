@@ -11,12 +11,12 @@ KST = timezone(timedelta(hours=9))
 
 # Predefined color map for better performance
 ACTIVITY_COLOR_MAP = {
-    'Inactive': 'rgba(172, 171, 176)',
-    'Light': 'rgba(194, 152, 160)',
-    'Moderate': 'rgba(214, 133, 145)',
-    'Active': 'rgba(233, 95, 115)',
-    'Very Active': 'rgba(236, 63, 84)',
-    'Intense': 'rgba(224, 28, 52)'
+    'Inactive': '#ACABB0',    # Light gray
+    'Light': '#C298A0',       # Light pink-gray
+    'Moderate': '#D68591',    # Pink
+    'Active': '#E95F73',      # Light red
+    'Very Active': '#EC3F54', # Bright red
+    'Intense': '#E01C34'      # Deep red
 }
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -32,7 +32,7 @@ def load_glucose_data():
 def load_meal_data():
     """Load and preprocess meal data"""
     meal_df = pd.read_csv(
-        'data/processed_meal_data.csv',  # Updated filename
+        'data/processed_meal_data.csv',
         parse_dates=['meal_time']
     )
     return meal_df[meal_df['meal_type'] != 'Snack'].reset_index(drop=True)
@@ -41,13 +41,9 @@ def load_meal_data():
 def load_activity_data():
     """Load and preprocess activity data"""
     return pd.read_csv(
-        'data/activity_data_with_levels.csv',  # Updated filename
+        'data/activity_data_with_levels.csv',
         parse_dates=['start_time', 'end_time']
     )
-
-def get_activity_color(activity_level):
-    """Returns a color based on predefined activity levels"""
-    return ACTIVITY_COLOR_MAP.get(activity_level, ACTIVITY_COLOR_MAP['Inactive'])
 
 @st.cache_data
 def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number):
@@ -69,9 +65,27 @@ def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number):
     
     return glucose_window, activity_window
 
-@st.cache_data
+def get_activity_color(activity_level):
+    """Returns a color based on predefined activity levels"""
+    base_color = ACTIVITY_COLOR_MAP.get(activity_level, ACTIVITY_COLOR_MAP['Inactive'])
+    rgb = tuple(int(base_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4))
+    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.3)"
+
+def get_activity_color_gradient(activity_level):
+    """Returns a color based on activity level using a gradient scale"""
+    level_map = {
+        'Inactive': 0.1,
+        'Light': 0.3,
+        'Moderate': 0.5,
+        'Active': 0.7,
+        'Very Active': 0.85,
+        'Intense': 1.0
+    }
+    opacity = level_map.get(activity_level, 0.1)
+    return f"rgba(255, 0, 0, {opacity})"
+
 def create_glucose_meal_activity_chart(glucose_window, meal_data, activity_window, selected_idx=0):
-    """Creates an interactive plotly figure with enhanced styling and readability"""
+    """Creates an interactive plotly figure with original color scheme"""
     meal_time = meal_data.iloc[selected_idx]['meal_time']
     end_time = meal_time + pd.Timedelta(hours=2)
     
@@ -159,7 +173,138 @@ def create_glucose_meal_activity_chart(glucose_window, meal_data, activity_windo
     fig.update_layout(
         title=dict(
             text=(
-                f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
+                f'Blood Glucose Pattern after Meal (Original Colors) on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
+                f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; '
+                f'padding: 5px; border-radius: 4px; margin-top: 8px; display: inline-block">'
+                f'{meal_subtitle}</span>'
+            ),
+            font=dict(size=16),
+            y=0.95,
+            x=0,
+            xanchor='left'
+        ),
+        xaxis=dict(
+            title='Time (minutes from meal)',
+            gridcolor='rgba(0,0,0,0.1)',
+            showgrid=True,
+            zeroline=False,
+            ticktext=tick_texts,
+            tickvals=tick_values,
+            title_font=dict(size=12),
+            tickfont=dict(size=10)
+        ),
+        yaxis=dict(
+            title='Blood Glucose (mg/dL)',
+            gridcolor='rgba(0,0,0,0.1)',
+            showgrid=True,
+            zeroline=False,
+            title_font=dict(size=12),
+            tickfont=dict(size=10),
+            range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)]
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='closest',
+        showlegend=False,
+        margin=dict(t=100, l=60, r=20, b=60),
+    )
+    
+    fig.update_xaxes(range=[meal_time, end_time])
+    
+    return fig
+
+def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activity_window, selected_idx=0):
+    """Creates chart with gradient colors for activities"""
+    meal_time = meal_data.iloc[selected_idx]['meal_time']
+    end_time = meal_time + pd.Timedelta(hours=2)
+    
+    # Add relative time in minutes to glucose data
+    glucose_window['minutes_from_meal'] = (
+        (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
+    ).round().astype(int)
+    
+    # Format meal information for subtitle
+    meal = meal_data.iloc[selected_idx]
+    meal_subtitle = (
+        f"{meal['food_name']} | "
+        f"Calories: {meal['calories']:.0f} | "
+        f"Carbs: {meal['carbohydrates']:.1f}g | "
+        f"Protein: {meal['protein']:.1f}g | "
+        f"Fat: {meal['fat']:.1f}g"
+    )
+    
+    fig = go.Figure()
+    
+    # Add activity data as background shading with gradient colors
+    for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
+        color = get_activity_color_gradient(activity['activity_level'])
+        
+        # Calculate minutes from meal for activity times
+        start_minutes = int(((activity['start_time'] - meal_time).total_seconds() / 60))
+        end_minutes = int(((activity['end_time'] - meal_time).total_seconds() / 60))
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[activity['start_time'], activity['start_time'], 
+                   activity['end_time'], activity['end_time']],
+                y=[0, 200, 200, 0],
+                fill='toself',
+                mode='none',
+                name='Activity',
+                fillcolor=color,
+                customdata=[[
+                    f"+{start_minutes}",
+                    f"+{end_minutes}",
+                    int(activity["steps"]),
+                    activity["distance"],
+                    int(activity["flights"]),
+                    activity["activity_level"]
+                ]],
+                hovertemplate=(
+                    '<b>Activity Data</b><br>' +
+                    'Time: %{customdata[0]} min to %{customdata[1]} min<br>' +
+                    'Steps: %{customdata[2]}<br>' +
+                    'Distance: %{customdata[3]:.2f} km<br>' +
+                    'Flights: %{customdata[4]}<br>' +
+                    'Level: %{customdata[5]}<extra></extra>'
+                ),
+                hoveron='fills',
+                showlegend=False,
+            )
+        )
+    
+    # Add glucose data
+    fig.add_trace(
+        go.Scatter(
+            x=glucose_window['DateTime'],
+            y=glucose_window['GlucoseValue'],
+            mode='lines+markers',
+            name='Glucose',
+            line=dict(color='#000035', width=1.5),
+            marker=dict(size=5),
+            customdata=glucose_window['minutes_from_meal'],
+            hovertemplate=(
+                '<b>Time:</b> +%{customdata} min<br>' +
+                '<b>Glucose:</b> %{y:.0f} mg/dL<br>' +
+                '<extra></extra>'
+            )
+        )
+    )
+    
+    # Add reference lines
+    fig.add_hline(y=180, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
+    fig.add_hline(y=70, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
+    
+    # Create custom tick values every 15 minutes
+    time_range = pd.date_range(start=meal_time, end=end_time, freq='15min')
+    tick_values = time_range.tolist()
+    tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
+    
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text=(
+                f'Blood Glucose Pattern after Meal (Gradient Colors) on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
                 f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; '
                 f'padding: 5px; border-radius: 4px; margin-top: 8px; display: inline-block">'
                 f'{meal_subtitle}</span>'
@@ -206,7 +351,8 @@ def run_streamlit_app():
     try:
         # Load data with progress indicators
         with st.spinner('Loading data...'):
-            glucose_df = load_glucose_data()
+
+glucose_df = load_glucose_data()
             meal_df = load_meal_data()
             activity_df = load_activity_data()
         
@@ -260,54 +406,89 @@ def run_streamlit_app():
                 selected_meal['meal_time'],
                 selected_meal['measurement_number']
             )
+
+            # Create container for activity level legend
+            st.markdown("### Activity Level Color Guide")
+            legend_col1, legend_col2 = st.columns(2)
             
-            # Create layout
-            col1, col2 = st.columns([2, 1])
+            with legend_col1:
+                st.markdown("**Original Color Scheme:**")
+                for level, color in ACTIVITY_COLOR_MAP.items():
+                    st.markdown(
+                        f'<div style="background-color: {color}; padding: 5px; '
+                        f'margin: 2px; border-radius: 3px;">{level}</div>',
+                        unsafe_allow_html=True
+                    )
             
-            with col1:
-                # Create and display the plot
-                fig = create_glucose_meal_activity_chart(
-                    glucose_window, 
-                    pd.DataFrame([selected_meal]), 
-                    activity_window, 
-                    0
-                )
-                st.plotly_chart(fig, use_container_width=True)
+            with legend_col2:
+                st.markdown("**Gradient Color Scheme:**")
+                level_map = {
+                    'Inactive': 0.1,
+                    'Light': 0.3,
+                    'Moderate': 0.5,
+                    'Active': 0.7,
+                    'Very Active': 0.85,
+                    'Intense': 1.0
+                }
+                for level, opacity in level_map.items():
+                    st.markdown(
+                        f'<div style="background-color: rgba(255,0,0,{opacity}); padding: 5px; '
+                        f'margin: 2px; border-radius: 3px;">{level}</div>',
+                        unsafe_allow_html=True
+                    )
             
-            with col2:
-                st.subheader('Meal Information')
-                
-                # Calculate glucose metrics
-                initial_glucose = glucose_window.iloc[0]['GlucoseValue']
-                peak_glucose = glucose_window['GlucoseValue'].max()
-                peak_time = (glucose_window.loc[glucose_window['GlucoseValue'].idxmax(), 'DateTime'] - 
-                           selected_meal['meal_time']).total_seconds() / 60
-                
-                # Display metrics
-                st.markdown(f"""
-                ### Glucose Response
-                - Initial: {initial_glucose:.0f} mg/dL
-                - Peak: {peak_glucose:.0f} mg/dL
-                - Time to Peak: {peak_time:.0f} min
-                
-                ### Meal Content
-                - Food: {selected_meal['food_name']}
-                - Calories: {selected_meal['calories']:.0f} kcal
-                - Carbs: {selected_meal['carbohydrates']:.0f}g
-                - Protein: {selected_meal['protein']:.0f}g
-                - Fat: {selected_meal['fat']:.0f}g
-                """)
-                
-                if not activity_window.empty:
-                    st.markdown("### Activity")
-                    for _, activity in activity_window.iterrows():
-                        minutes_from_meal = (activity['start_time'] - 
-                                           selected_meal['meal_time']).total_seconds() / 60
-                        st.markdown(f"""
-                        - At +{minutes_from_meal:.0f} min:
-                          - Steps: {activity['steps']:,}
-                          - Level: {activity['activity_level']}
-                        """)
+            # Display original color scheme plot
+            st.subheader("Original Color Scheme")
+            fig1 = create_glucose_meal_activity_chart(
+                glucose_window, 
+                pd.DataFrame([selected_meal]), 
+                activity_window, 
+                0
+            )
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            # Display gradient color scheme plot
+            st.subheader("Gradient Color Scheme")
+            fig2 = create_glucose_meal_activity_chart_gradient(
+                glucose_window, 
+                pd.DataFrame([selected_meal]), 
+                activity_window, 
+                0
+            )
+            st.plotly_chart(fig2, use_container_width=True)
+            
+            # Display meal information
+            st.sidebar.subheader('Meal Information')
+            
+            # Calculate glucose metrics
+            initial_glucose = glucose_window.iloc[0]['GlucoseValue']
+            peak_glucose = glucose_window['GlucoseValue'].max()
+            peak_time = (glucose_window.loc[glucose_window['GlucoseValue'].idxmax(), 'DateTime'] - 
+                        selected_meal['meal_time']).total_seconds() / 60
+            
+            # Display metrics
+            st.sidebar.markdown("### Glucose Response")
+            st.sidebar.markdown(f"- Initial: {initial_glucose:.0f} mg/dL")
+            st.sidebar.markdown(f"- Peak: {peak_glucose:.0f} mg/dL")
+            st.sidebar.markdown(f"- Time to Peak: {peak_time:.0f} min")
+            
+            st.sidebar.markdown("### Meal Content")
+            st.sidebar.markdown(f"- Food: {selected_meal['food_name']}")
+            st.sidebar.markdown(f"- Calories: {selected_meal['calories']:.0f} kcal")
+            st.sidebar.markdown(f"- Carbs: {selected_meal['carbohydrates']:.0f}g")
+            st.sidebar.markdown(f"- Protein: {selected_meal['protein']:.0f}g")
+            st.sidebar.markdown(f"- Fat: {selected_meal['fat']:.0f}g")
+            
+            if not activity_window.empty:
+                st.sidebar.markdown("### Activity")
+                for _, activity in activity_window.iterrows():
+                    minutes_from_meal = (activity['start_time'] - 
+                                       selected_meal['meal_time']).total_seconds() / 60
+                    st.sidebar.markdown(
+                        f"- At +{minutes_from_meal:.0f} min:\n"
+                        f"  - Steps: {activity['steps']:,}\n"
+                        f"  - Level: {activity['activity_level']}"
+                    )
         else:
             st.info('No meals found in the selected date range.')
             
