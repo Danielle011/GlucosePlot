@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import timezone, timedelta
+import numpy as np 
 
 # Set timezone
 KST = timezone(timedelta(hours=9))
