@@ -77,34 +77,25 @@ def get_activity_color_gradient(activity_level):
     opacity = level_map.get(activity_level, 0.1)
     return f"rgba(255, 0, 0, {opacity})"
 
+# First, add a helper function to format time in 12-hour format
+def format_time_12hr(dt):
+    """Convert datetime to 12-hour format string"""
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+# Update the activity trace in create_glucose_meal_activity_chart_gradient function
 def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
-    """Creates chart with gradient colors for activities"""
-    meal_time = meal_data.iloc[selected_idx]['meal_time']
-    
-    # Add relative time in minutes to glucose data
-    glucose_window['minutes_from_meal'] = (
-        (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
-    ).round().astype(int)
-    
-    # Format meal information for subtitle
-    meal = meal_data.iloc[selected_idx]
-    meal_subtitle = (
-        f"{meal['food_name']} | "
-        f"Calories: {meal['calories']:.0f} | "
-        f"Carbs: {meal['carbohydrates']:.1f}g | "
-        f"Protein: {meal['protein']:.1f}g | "
-        f"Fat: {meal['fat']:.1f}g"
-    )
-    
-    fig = go.Figure()
+    # ... (previous code remains same until activity trace) ...
     
     # Add activity data as background shading with gradient colors
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
         color = get_activity_color_gradient(activity['activity_level'])
         
-        # Calculate minutes from meal for activity times
-        start_minutes = int(((activity['start_time'] - meal_time).total_seconds() / 60))
-        end_minutes = int(((activity['end_time'] - meal_time).total_seconds() / 60))
+        # Format start and end times
+        start_time_str = format_time_12hr(activity['start_time'])
+        end_time_str = format_time_12hr(activity['end_time'])
+        
+        # Format steps with thousand separator
+        steps_str = f"{int(activity['steps']):,}"
         
         fig.add_trace(
             go.Scatter(
@@ -116,20 +107,24 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
                 name='Activity',
                 fillcolor=color,
                 customdata=[[
-                    f"+{start_minutes}",
-                    f"+{end_minutes}",
-                    int(activity["steps"]),
+                    start_time_str,
+                    end_time_str,
+                    steps_str,
                     activity["distance"],
                     int(activity["flights"]),
-                    activity["activity_level"]
+                    activity["activity_level"],
+                    color  # Pass color to use in hover template
                 ]],
                 hovertemplate=(
-                    '<b>Activity Data</b><br>' +
-                    'Time: %{customdata[0]} min to %{customdata[1]} min<br>' +
-                    'Steps: %{customdata[2]}<br>' +
-                    'Distance: %{customdata[3]:.2f} km<br>' +
-                    'Flights: %{customdata[4]}<br>' +
-                    'Level: %{customdata[5]}<extra></extra>'
+                    '<br>'.join([
+                        '<b>%{customdata[0]} - %{customdata[1]}</b>',
+                        '<b>Steps:</b> %{customdata[2]} steps',
+                        '<b>Distance:</b> %{customdata[3]:.1f} km',
+                        '<b>Flights:</b> %{customdata[4]} flights',
+                        '<span style="display: inline-block; margin-top: 5px; padding: 2px 6px; ' +
+                        'border-radius: 3px; background-color: %{customdata[6]}; color: white;">' +
+                        '%{customdata[5]}</span>'
+                    ]) + '<extra></extra>'
                 ),
                 hoveron='fills',
                 showlegend=False,
