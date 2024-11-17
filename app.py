@@ -11,12 +11,12 @@ KST = timezone(timedelta(hours=9))
 
 # Predefined color map for better performance
 ACTIVITY_COLOR_MAP = {
-    'Inactive': 'rgba(172, 171, 176, 0.3)',
-    'Light': 'rgba(194, 152, 160, 0.3)',
-    'Moderate': 'rgba(214, 133, 145, 0.3)',
-    'Active': 'rgba(233, 95, 115, 0.3)',
-    'Very Active': 'rgba(236, 63, 84, 0.3)',
-    'Intense': 'rgba(224, 28, 52, 0.3)'
+    'Inactive': 'rgba(172, 171, 176)',
+    'Light': 'rgba(194, 152, 160)',
+    'Moderate': 'rgba(214, 133, 145)',
+    'Active': 'rgba(233, 95, 115)',
+    'Very Active': 'rgba(236, 63, 84)',
+    'Intense': 'rgba(224, 28, 52)'
 }
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -36,7 +36,7 @@ def load_glucose_data():
 def load_meal_data():
     """Load and preprocess meal data"""
     meal_df = pd.read_csv(
-        'data/meal_data.csv',
+        'data/processed_meal_data.csv',
         usecols=['measurement_number', 'meal_time', 'food_name', 'calories',
                 'carbohydrates', 'sugars', 'protein', 'fat',
                 'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'meal_type'],
@@ -60,7 +60,7 @@ def load_meal_data():
 def load_activity_data():
     """Load and preprocess activity data"""
     return pd.read_csv(
-        'data/activity_data.csv',
+        'data/activity_data_with_levels.csv',
         usecols=['start_time', 'end_time', 'steps', 'distance', 'flights', 'activity_level'],
         parse_dates=['start_time', 'end_time'],
         dtype={
