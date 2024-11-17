@@ -344,6 +344,178 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     
     return fig
 
+def create_glucose_steps_chart(glucose_window, meal_data, activity_window, selected_idx=0):
+    """Creates chart with gradient colors for activities and step count line"""
+    meal_time = meal_data.iloc[selected_idx]['meal_time']
+    end_time = meal_time + pd.Timedelta(hours=2)
+    
+    # Add relative time in minutes to glucose data
+    glucose_window['minutes_from_meal'] = (
+        (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
+    ).round().astype(int)
+    
+    # Format meal information for subtitle
+    meal = meal_data.iloc[selected_idx]
+    meal_subtitle = (
+        f"{meal['food_name']} | "
+        f"Calories: {meal['calories']:.0f} | "
+        f"Carbs: {meal['carbohydrates']:.1f}g | "
+        f"Protein: {meal['protein']:.1f}g | "
+        f"Fat: {meal['fat']:.1f}g"
+    )
+    
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    # Add activity data as background shading with gradient colors
+    for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
+        color = get_activity_color_gradient(activity['activity_level'])
+        
+        # Calculate minutes from meal for activity times
+        start_minutes = int(((activity['start_time'] - meal_time).total_seconds() / 60))
+        end_minutes = int(((activity['end_time'] - meal_time).total_seconds() / 60))
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[activity['start_time'], activity['start_time'], 
+                   activity['end_time'], activity['end_time']],
+                y=[0, 200, 200, 0],
+                fill='toself',
+                mode='none',
+                name='Activity',
+                fillcolor=color,
+                customdata=[[
+                    f"+{start_minutes}",
+                    f"+{end_minutes}",
+                    int(activity["steps"]),
+                    activity["distance"],
+                    int(activity["flights"]),
+                    activity["activity_level"]
+                ]],
+                hovertemplate=(
+                    '<b>Activity Data</b><br>' +
+                    'Time: %{customdata[0]} min to %{customdata[1]} min<br>' +
+                    'Steps: %{customdata[2]}<br>' +
+                    'Distance: %{customdata[3]:.2f} km<br>' +
+                    'Flights: %{customdata[4]}<br>' +
+                    'Level: %{customdata[5]}<extra></extra>'
+                ),
+                hoveron='fills',
+                showlegend=False,
+            ),
+            secondary_y=False
+        )
+    
+    # Add glucose data
+    fig.add_trace(
+        go.Scatter(
+            x=glucose_window['DateTime'],
+            y=glucose_window['GlucoseValue'],
+            mode='lines+markers',
+            name='Glucose',
+            line=dict(color='#000035', width=1.5),
+            marker=dict(size=5),
+            customdata=glucose_window['minutes_from_meal'],
+            hovertemplate=(
+                '<b>Time:</b> +%{customdata} min<br>' +
+                '<b>Glucose:</b> %{y:.0f} mg/dL<br>' +
+                '<extra></extra>'
+            )
+        ),
+        secondary_y=False
+    )
+    
+    # Add step count data on secondary y-axis
+    step_data = []
+    step_times = []
+    for _, activity in activity_window.iterrows():
+        step_data.append(activity['steps'])
+        step_times.append(activity['start_time'])
+    
+    if step_data:  # Only add if there's activity data
+        fig.add_trace(
+            go.Scatter(
+                x=step_times,
+                y=step_data,
+                mode='lines+markers',
+                name='Steps',
+                line=dict(color='#FF6B6B', width=2, dash='dot'),
+                marker=dict(size=8, symbol='diamond'),
+                hovertemplate=(
+                    '<b>Steps:</b> %{y:,.0f}<br>' +
+                    '<extra></extra>'
+                )
+            ),
+            secondary_y=True
+        )
+    
+    # Add reference lines for glucose
+    fig.add_hline(y=180, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
+    fig.add_hline(y=70, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
+    
+    # Create custom tick values every 15 minutes
+    time_range = pd.date_range(start=meal_time, end=end_time, freq='15min')
+    tick_values = time_range.tolist()
+    tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
+    
+    # Update layout
+    fig.update_layout(
+        title=dict(
+            text=(
+                f'Blood Glucose and Activity after Meal on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
+                f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; '
+                f'padding: 5px; border-radius: 4px; margin-top: 8px; display: inline-block">'
+                f'{meal_subtitle}</span>'
+            ),
+            font=dict(size=16),
+            y=0.95,
+            x=0,
+            xanchor='left'
+        ),
+        xaxis=dict(
+            title='Time (minutes from meal)',
+            gridcolor='rgba(0,0,0,0.1)',
+            showgrid=True,
+            zeroline=False,
+            ticktext=tick_texts,
+            tickvals=tick_values,
+            title_font=dict(size=12),
+            tickfont=dict(size=10)
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='x unified',
+        showlegend=True,
+        margin=dict(t=100, l=60, r=60, b=60),
+    )
+    
+    # Update yaxis properties
+    fig.update_yaxes(
+        title_text="Blood Glucose (mg/dL)",
+        gridcolor='rgba(0,0,0,0.1)',
+        showgrid=True,
+        zeroline=False,
+        title_font=dict(size=12),
+        tickfont=dict(size=10),
+        range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)],
+        secondary_y=False
+    )
+    
+    fig.update_yaxes(
+        title_text="Steps",
+        gridcolor='rgba(0,0,0,0.1)',
+        showgrid=False,
+        zeroline=False,
+        title_font=dict(size=12),
+        tickfont=dict(size=10),
+        secondary_y=True
+    )
+    
+    # Set x-axis range
+    fig.update_xaxes(range=[meal_time, end_time])
+    
+    return fig
+
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     st.title('Blood Glucose Analysis Dashboard')
@@ -354,7 +526,7 @@ def run_streamlit_app():
             glucose_df = load_glucose_data()  # These lines should be
             meal_df = load_meal_data()        # indented under the
             activity_df = load_activity_data() # 'with' statement
-            
+
         st.sidebar.markdown("### Dataset Information")
         date_min = meal_df['meal_time'].dt.date.min()
         date_max = meal_df['meal_time'].dt.date.max()
@@ -435,16 +607,17 @@ def run_streamlit_app():
                         unsafe_allow_html=True
                     )
             
-            # Display original color scheme plot
-            st.subheader("Original Color Scheme")
-            fig1 = create_glucose_meal_activity_chart(
+
+# Then in your run_streamlit_app() function, replace the plotting section with:
+            st.subheader("Glucose and Activity Analysis")
+            fig = create_glucose_steps_chart(
                 glucose_window, 
                 pd.DataFrame([selected_meal]), 
                 activity_window, 
                 0
             )
-            st.plotly_chart(fig1, use_container_width=True)
-            
+            st.plotly_chart(fig, use_container_width=True)
+
             # Display gradient color scheme plot
             st.subheader("Gradient Color Scheme")
             fig2 = create_glucose_meal_activity_chart_gradient(
