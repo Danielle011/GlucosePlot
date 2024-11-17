@@ -25,34 +25,15 @@ def load_glucose_data():
     return pd.read_csv(
         'data/original_glucose_data.csv',
         usecols=['MeasurementNumber', 'DateTime', 'GlucoseValue'],
-        parse_dates=['DateTime'],
-        dtype={
-            'MeasurementNumber': 'int32',
-            'GlucoseValue': 'float32'
-        }
+        parse_dates=['DateTime']
     )
 
 @st.cache_data(ttl=3600)
 def load_meal_data():
     """Load and preprocess meal data"""
     meal_df = pd.read_csv(
-        'data/processed_meal_data.csv',
-        usecols=['measurement_number', 'meal_time', 'food_name', 'calories',
-                'carbohydrates', 'sugars', 'protein', 'fat',
-                'saturated_fat', 'trans_fat', 'cholesterol', 'sodium', 'meal_type'],
-        parse_dates=['meal_time'],
-        dtype={
-            'measurement_number': 'int32',
-            'calories': 'float32',
-            'carbohydrates': 'float32',
-            'sugars': 'float32',
-            'protein': 'float32',
-            'fat': 'float32',
-            'saturated_fat': 'float32',
-            'trans_fat': 'float32',
-            'cholesterol': 'float32',
-            'sodium': 'float32'
-        }
+        'data/processed_meal_data.csv',  # Updated filename
+        parse_dates=['meal_time']
     )
     return meal_df[meal_df['meal_type'] != 'Snack'].reset_index(drop=True)
 
@@ -60,14 +41,8 @@ def load_meal_data():
 def load_activity_data():
     """Load and preprocess activity data"""
     return pd.read_csv(
-        'data/activity_data_with_levels.csv',
-        usecols=['start_time', 'end_time', 'steps', 'distance', 'flights', 'activity_level'],
-        parse_dates=['start_time', 'end_time'],
-        dtype={
-            'steps': 'int32',
-            'distance': 'float32',
-            'flights': 'int32'
-        }
+        'data/activity_data_with_levels.csv',  # Updated filename
+        parse_dates=['start_time', 'end_time']
     )
 
 def get_activity_color(activity_level):
