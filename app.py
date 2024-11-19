@@ -219,6 +219,7 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
     # Format meal information for subtitle
     meal = meal_data.iloc[selected_idx]
     meal_subtitle = (
+        f"{meal_time.strftime('%I:%M %p')} | "  # Added meal time
         f"{meal['food_name']} | "
         f"Calories: {meal['calories']:.0f} | "
         f"Carbs: {meal['carbohydrates']:.1f}g | "
@@ -290,15 +291,12 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
         )
     )
     
-    # Add reference lines
-    fig.add_hline(y=180, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
-    fig.add_hline(y=70, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
-    
     # Create custom tick values every 15 minutes
     time_range = pd.date_range(start=meal_time, end=end_time, freq='15min')
     tick_values = time_range.tolist()
     tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
     
+    # Update layout with secondary y-axis
     fig.update_layout(
         title=dict(
             text=(
@@ -347,10 +345,11 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
         paper_bgcolor='white',
         hovermode='closest',
         showlegend=False,
-        margin=dict(t=100, l=60, r=60, b=60)
+        margin=dict(t=100, l=60, r=60, b=60),
+        bargap=0
     )
     
-    # Remove old reference lines and add only 140 line
+    # Add only 140 reference line
     fig.add_hline(y=140, line_dash="dot", line_color="rgba(0, 0, 0, 0.3)", line_width=1)
     
     fig.update_xaxes(range=[meal_time, end_time])
@@ -383,9 +382,10 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
         (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
     ).round().astype(int)
     
-    # Format meal information for subtitle
+    # Format meal information for subtitle - Updated to include time
     meal = meal_data.iloc[selected_idx]
     meal_subtitle = (
+        f"{meal_time.strftime('%I:%M %p')} | "  # Added meal time
         f"{meal['food_name']} | "
         f"Calories: {meal['calories']:.0f} | "
         f"Carbs: {meal['carbohydrates']:.1f}g | "
@@ -413,14 +413,13 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
             )
         )
         
-        # Create hover points: Generate 5 evenly spaced points during the activity
+        # Create hover points
         hover_times = pd.date_range(
             start=activity['start_time'],
             end=activity['end_time'],
             periods=5
         )
         
-        # Format hover text
         hover_text = (
             f"{format_time_12hr(activity['start_time'])} - {format_time_12hr(activity['end_time'])}<br>" +
             f"Steps: {int(activity['steps']):,} steps<br>" +
@@ -430,21 +429,20 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
             f"{activity['activity_level']}</span>"
         )
         
-        # Add invisible hover points
         fig.add_trace(
             go.Scatter(
                 x=hover_times,
-                y=[100] * len(hover_times),  # Place points in middle of y-range
+                y=[100] * len(hover_times),
                 mode='markers',
                 marker=dict(
                     size=20,
-                    color='rgba(0,0,0,0)',  # Invisible markers
-                    symbol='square',  # Larger hover area
+                    color='rgba(0,0,0,0)',
+                    symbol='square',
                 ),
                 hoverinfo='text',
                 hovertext=hover_text,
                 showlegend=False,
-                name='',  # Empty name to avoid legend entry
+                name='',
             )
         )
     
@@ -465,21 +463,17 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
             )
         )
     )
-
-    # Add reference lines
-    fig.add_hline(y=180, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
-    fig.add_hline(y=70, line_dash="dot", line_color="rgba(200, 200, 200)", line_width=1)
     
     # Create custom tick values every 15 minutes
     time_range = pd.date_range(start=meal_time, end=end_time, freq='15min')
     tick_values = time_range.tolist()
     tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
     
-    # Update layout
+    # Update layout with new styling
     fig.update_layout(
         title=dict(
             text=(
-                f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
+                f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d")}<br>'
                 f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; '
                 f'padding: 5px; border-radius: 4px; margin-top: 8px; display: inline-block">'
                 f'{meal_subtitle}</span>'
@@ -491,21 +485,23 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
         ),
         xaxis=dict(
             title='Time (minutes from meal)',
-            gridcolor='rgba(0,0,0,0.1)',
-            showgrid=True,
+            showgrid=False,  # Removed grid
             zeroline=False,
             ticktext=tick_texts,
             tickvals=tick_values,
-            title_font=dict(size=12),
-            tickfont=dict(size=10)
+            title_font=dict(size=12, color='black'),  # Made black
+            tickfont=dict(size=10, color='black'),    # Made black
+            linecolor='black',  # Made axis line black
+            mirror=False       # Show axis line on both sides
         ),
         yaxis=dict(
             title='Blood Glucose (mg/dL)',
-            gridcolor='rgba(0,0,0,0.1)',
-            showgrid=True,
+            showgrid=False,  # Removed grid
             zeroline=False,
-            title_font=dict(size=12),
-            tickfont=dict(size=10),
+            title_font=dict(size=12, color='black'),  # Made black
+            tickfont=dict(size=10, color='black'),    # Made black
+            linecolor='black',  # Made axis line black
+            mirror=False,       # Show axis line on both sides
             range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)]
         ),
         plot_bgcolor='white',
@@ -514,6 +510,9 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
         showlegend=False,
         margin=dict(t=100, l=60, r=20, b=60),
     )
+    
+    # Add only 140 reference line
+    fig.add_hline(y=140, line_dash="dot", line_color="rgba(0, 0, 0, 0.3)", line_width=1)
     
     fig.update_xaxes(range=[meal_time, end_time])
     
