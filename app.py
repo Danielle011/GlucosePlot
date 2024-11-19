@@ -399,7 +399,7 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
         color = get_activity_color_gradient(activity['activity_level'])
         
-        # Create background shade
+        # Create background shade with legend
         fig.add_trace(
             go.Scatter(
                 x=[activity['start_time'], activity['start_time'], 
@@ -407,11 +407,14 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
                 y=[0, 200, 200, 0],
                 fill='toself',
                 mode='none',
-                showlegend=False,
+                name=activity['activity_level'],  # Add activity level as name
                 fillcolor=color,
-                hoverinfo='skip'  # Disable hover for the shade
+                hoverinfo='skip',  # Disable hover for the shade
+                showlegend=True,   # Show in legend
+                legendgroup=activity['activity_level'],  # Group same activity levels
             )
         )
+
         
         # Create hover points
         hover_times = pd.date_range(
@@ -507,7 +510,14 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
         plot_bgcolor='white',
         paper_bgcolor='white',
         hovermode='closest',
-        showlegend=False,
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="left",
+            x=0.01,
+            bgcolor='rgba(255,255,255,0.8)'  # Semi-transparent white background
+        ) 
         margin=dict(t=100, l=60, r=20, b=60),
     )
     
