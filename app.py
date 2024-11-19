@@ -472,7 +472,7 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
     tick_values = time_range.tolist()
     tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
     
-    # Update layout with new styling
+# Update layout with new styling and legend
     fig.update_layout(
         title=dict(
             text=(
@@ -495,7 +495,7 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
             title_font=dict(size=12, color='black'),  # Made black
             tickfont=dict(size=10, color='black'),    # Made black
             linecolor='black',  # Made axis line black
-            mirror=False       # Show axis line on both sides
+            mirror=True        # Show axis line on both sides
         ),
         yaxis=dict(
             title='Blood Glucose (mg/dL)',
@@ -504,23 +504,26 @@ def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activ
             title_font=dict(size=12, color='black'),  # Made black
             tickfont=dict(size=10, color='black'),    # Made black
             linecolor='black',  # Made axis line black
-            mirror=False,       # Show axis line on both sides
+            mirror=True,       # Show axis line on both sides
             range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)]
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
         hovermode='closest',
-        showlegend=True,
+        showlegend=True,  # Show legend
+        margin=dict(t=100, l=60, r=20, b=60),
+        bargap=0,
         legend=dict(
             yanchor="top",
             y=0.99,
             xanchor="left",
             x=0.01,
-            bgcolor='rgba(255,255,255,0.8)'  # Semi-transparent white background
-        ) 
-        margin=dict(t=100, l=60, r=20, b=60),
+            bgcolor='rgba(255,255,255,0.8)',
+            bordercolor='black',
+            borderwidth=1
+        )
     )
-    
+        
     # Add only 140 reference line
     fig.add_hline(y=140, line_dash="dot", line_color="rgba(0, 0, 0, 0.3)", line_width=1)
     
