@@ -67,6 +67,7 @@ def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number, full_meal
 
 def create_glucose_activity_bars_numbers(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
     """Creates chart with bars and flight numbers on top"""
+
     meal_time = meal_data.iloc[selected_idx]['meal_time']
     
     # Add relative time in minutes to glucose data
@@ -75,9 +76,10 @@ def create_glucose_activity_bars_numbers(glucose_window, meal_data, activity_win
         (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
     ).round().astype(int)
     
-    # Format meal information for subtitle
+ # Update meal subtitle to include time
     meal = meal_data.iloc[selected_idx]
     meal_subtitle = (
+        f"{meal_time.strftime('%I:%M %p')} | "  # Added meal time
         f"{meal['food_name']} | "
         f"Calories: {meal['calories']:.0f} | "
         f"Carbs: {meal['carbohydrates']:.1f}g | "
@@ -297,11 +299,10 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
     tick_values = time_range.tolist()
     tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
     
-    # Update layout with secondary y-axis
     fig.update_layout(
         title=dict(
             text=(
-                f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d %H:%M")}<br>'
+                f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d")}<br>'
                 f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; '
                 f'padding: 5px; border-radius: 4px; margin-top: 8px; display: inline-block">'
                 f'{meal_subtitle}</span>'
@@ -313,21 +314,23 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
         ),
         xaxis=dict(
             title='Time (minutes from meal)',
-            gridcolor='rgba(0,0,0,0.1)',
-            showgrid=True,
+            showgrid=False,  # Removed grid
             zeroline=False,
             ticktext=tick_texts,
             tickvals=tick_values,
-            title_font=dict(size=12),
-            tickfont=dict(size=10)
+            title_font=dict(size=12, color='black'),  # Made black
+            tickfont=dict(size=10, color='black'),    # Made black
+            linecolor='black',  # Made axis line black
+            mirror=True        # Show axis line on both sides
         ),
         yaxis=dict(
             title='Blood Glucose (mg/dL)',
-            gridcolor='rgba(0,0,0,0.1)',
-            showgrid=True,
+            showgrid=False,  # Removed grid
             zeroline=False,
-            title_font=dict(size=12),
-            tickfont=dict(size=10),
+            title_font=dict(size=12, color='black'),  # Made black
+            tickfont=dict(size=10, color='black'),    # Made black
+            linecolor='black',  # Made axis line black
+            mirror=True,       # Show axis line on both sides
             range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)]
         ),
         yaxis2=dict(
@@ -335,20 +338,25 @@ def create_glucose_activity_bars_markers(glucose_window, meal_data, activity_win
             overlaying='y',
             side='right',
             range=[0, max(3000, activity_window['steps'].max() * 1.1)],
-            showgrid=False
+            showgrid=False,
+            title_font=dict(size=12, color='black'),  # Made black
+            tickfont=dict(size=10, color='black'),    # Made black
+            linecolor='black'  # Made axis line black
         ),
         plot_bgcolor='white',
         paper_bgcolor='white',
         hovermode='closest',
         showlegend=False,
-        margin=dict(t=100, l=60, r=60, b=60),
-        bargap=0
+        margin=dict(t=100, l=60, r=60, b=60)
     )
+    
+    # Remove old reference lines and add only 140 line
+    fig.add_hline(y=140, line_dash="dot", line_color="rgba(0, 0, 0, 0.3)", line_width=1)
     
     fig.update_xaxes(range=[meal_time, end_time])
     
     return fig
-        
+
 def get_activity_color_gradient(activity_level):
     """Returns a color based on activity level using a gradient scale"""
     level_map = {
