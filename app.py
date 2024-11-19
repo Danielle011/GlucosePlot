@@ -292,21 +292,22 @@ def run_streamlit_app():
 
             # Calculate window duration
             window_duration = (end_time - selected_meal['meal_time']).total_seconds() / 60
-
-            # Replace the current activity level guide code with this:
-
-            # Create horizontal activity level guide
-            st.markdown("### Activity Level Color Guide")
-
-            # Create container for horizontal display
+            
+            # Create legend-style activity guide
             st.markdown(
                 """
-                <div style="display: flex; gap: 10px; margin: 10px 0;">
-                """, 
+                <div style="
+                    display: inline-flex;
+                    align-items: center;
+                    padding: 8px 16px;
+                    background-color: white;
+                    border: 1px solid #333;
+                ">
+                    <div style="display: flex; gap: 20px; align-items: center;">
+                """,
                 unsafe_allow_html=True
             )
 
-            # Add activity levels
             level_map = {
                 'Inactive': 0.1,
                 'Light': 0.2,
@@ -318,18 +319,18 @@ def run_streamlit_app():
 
             for level, opacity in level_map.items():
                 st.markdown(
+                    f'<div style="display: flex; align-items: center; gap: 5px;">'
                     f'<div style="'
-                    f'background-color: rgba(255,0,0,{opacity}); '
-                    f'padding: 8px 16px; '
-                    f'color: {"white" if opacity > 0.5 else "black"}; '
-                    f'min-width: 100px; '
-                    f'text-align: center;'
-                    f'">{level}</div>',
+                    f'width: 15px;'
+                    f'height: 15px;'
+                    f'background-color: rgba(255,0,0,{opacity});'
+                    f'"></div>'
+                    f'<span style="font-size: 0.9em;">{level}</span>'
+                    f'</div>',
                     unsafe_allow_html=True
                 )
 
-            # Close container
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown("</div></div>", unsafe_allow_html=True)
 
             # Display chart
             fig = create_glucose_meal_activity_chart_gradient(
