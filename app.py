@@ -48,7 +48,7 @@ def get_activity_color_gradient(activity_level):
         'Very Active': 0.85,
         'Intense': 1.0
     }
-    opacity = level_map.get(activity_level, 0.1)
+    opacity = level_map.get(activity_level, 0.2)
     return f"rgba(255, 0, 0, {opacity})"
 
 def format_time_12hr(dt):
@@ -293,21 +293,15 @@ def run_streamlit_app():
             # Calculate window duration
             window_duration = (end_time - selected_meal['meal_time']).total_seconds() / 60
 
-            # Create activity level legend with border
+            # Replace the current activity level guide code with this:
+
+            # Create horizontal activity level guide
+            st.markdown("### Activity Level Color Guide")
+
+            # Create container for horizontal display
             st.markdown(
                 """
-                <div style="
-                    border: 1px solid black;
-                    padding: 10px;
-                    margin: 10px 0;
-                    display: inline-block;
-                    background-color: white;
-                ">
-                    <div style="
-                        display: flex;
-                        gap: 15px;
-                        align-items: center;
-                    ">
+                <div style="display: flex; gap: 10px; margin: 10px 0;">
                 """, 
                 unsafe_allow_html=True
             )
@@ -326,18 +320,17 @@ def run_streamlit_app():
                 st.markdown(
                     f'<div style="'
                     f'background-color: rgba(255,0,0,{opacity}); '
-                    f'padding: 4px 12px; '
-                    f'border-radius: 3px; '
-                    f'font-size: 0.9em; '
-                    f'white-space: nowrap; '
-                    f'color: {"white" if opacity > 0.5 else "black"}'
+                    f'padding: 8px 16px; '
+                    f'color: {"white" if opacity > 0.5 else "black"}; '
+                    f'min-width: 100px; '
+                    f'text-align: center;'
                     f'">{level}</div>',
                     unsafe_allow_html=True
                 )
 
-            # Close the container
-            st.markdown("</div></div>", unsafe_allow_html=True)
-            
+            # Close container
+            st.markdown("</div>", unsafe_allow_html=True)
+
             # Display chart
             fig = create_glucose_meal_activity_chart_gradient(
                 glucose_window, 
