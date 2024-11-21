@@ -887,6 +887,102 @@ def create_meal_deep_analysis_plots(meal_responses):
 
     return fig1, fig2
 
+def analyze_carb_categories(meal_df, glucose_df):
+    """Analyze glucose response patterns by carb categories"""
+    
+    # Create carb categories using percentiles
+    meal_df['carb_category'] = pd.qcut(
+        meal_df['carbohydrates'], 
+        q=3, 
+        labels=['Low Carb', 'Medium Carb', 'High Carb']
+    )
+    
+    # Get the actual thresholds for reference
+    carb_thresh = pd.qcut(meal_df['carbohydrates'], q=3).unique()
+    thresh_values = [f"({int(cat.left)}-{int(cat.right)}g)" for cat in carb_thresh]
+    
+    # Analyze post-meal responses
+    meal_responses = []
+    
+    for _, meal in meal_df.iterrows():
+        # Get 2-hour glucose window
+        post_meal = glucose_df[
+            (glucose_df['DateTime'] >= meal['meal_time']) &
+            (glucose_df['DateTime'] <= meal['meal_time'] + pd.Timedelta(hours=2))
+        ]
+        
+        if not post_meal.empty:
+            baseline = post_meal.iloc[0]['GlucoseValue']
+            peak = post_meal['GlucoseValue'].max()
+            
+            meal_responses.append({
+                'meal_type': meal['meal_type'],
+                'carb_category': meal['carb_category'],
+                'actual_carbs': meal['carbohydrates'],
+                'peak_glucose': peak,
+                'baseline': baseline,
+                'glucose_rise': peak - baseline
+            })
+    
+    response_df = pd.DataFrame(meal_responses)
+    
+    # Create visualization
+    fig = go.Figure()
+    
+    # Create box plots for each category
+    for meal_type in response_df['meal_type'].unique():
+        mask = response_df['meal_type'] == meal_type
+        
+        fig.add_trace(go.Box(
+            x=response_df[mask]['carb_category'],
+            y=response_df[mask]['glucose_rise'],
+            name=meal_type,
+            boxpoints='all',
+            jitter=0.3,
+            pointpos=-1.8,
+            marker_color=response_df[mask]['actual_carbs'],
+            marker_colorscale='YlOrRd',
+            marker_showscale=True,
+            marker_colorbar_title='Actual Carbs (g)',
+            hovertemplate=(
+                "Meal Type: %{fullData.name}<br>" +
+                "Carb Category: %{x}<br>" +
+                "Glucose Rise: %{y:.1f} mg/dL<br>" +
+                "<extra></extra>"
+            )
+        ))
+    
+    fig.update_layout(
+        title=dict(
+            text=(
+                "Glucose Rise by Carb Category and Meal Type<br>" +
+                f"<span style='font-size:12px'>Categories: Low {thresh_values[0]}, " +
+                f"Medium {thresh_values[1]}, High {thresh_values[2]}</span>"
+            )
+        ),
+        xaxis_title="Carb Category",
+        yaxis_title="Glucose Rise (mg/dL)",
+        boxmode='group',
+        height=600,
+        showlegend=True,
+        template="plotly_white"
+    )
+    
+    # Add reference lines
+    fig.add_hline(y=30, line_dash="dash", line_color="rgba(255,0,0,0.3)", 
+                  annotation_text="30 mg/dL rise")
+    fig.add_hline(y=50, line_dash="dash", line_color="rgba(255,0,0,0.5)", 
+                  annotation_text="50 mg/dL rise")
+    
+    # Calculate summary statistics
+    summary_stats = response_df.groupby(['meal_type', 'carb_category']).agg({
+        'glucose_rise': ['mean', 'std', 'count'],
+        'peak_glucose': ['mean', 'std'],
+        'actual_carbs': ['mean', 'min', 'max']
+    }).round(1)
+    
+    return fig, summary_stats, response_df
+
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     
@@ -1048,12 +1144,13 @@ def run_streamlit_app():
         else:  # EDA Dashboard
             st.title('Exploratory Data Analysis Dashboard')
             
-            tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
                 "Glucose Patterns", 
                 "Meal Response Analysis",
                 "Activity Impact",
                 "Summary Statistics",
                 "Meal Response Deep Dive"
+                "Carb Category Analysis"
             ])
             
             with tab1:
@@ -1218,6 +1315,36 @@ def run_streamlit_app():
                 - Activity plays a crucial role in managing post-meal glucose
                 """)
 
+            with tab6:
+                    st.subheader("Carbohydrate Category Analysis")
+    
+                    # Create the analysis
+                    carb_fig, carb_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
+                    
+                    # Show the visualization
+                    st.plotly_chart(carb_fig, use_container_width=True)
+                    
+                    # Show summary statistics
+                    st.markdown("### Summary Statistics by Category")
+                    st.dataframe(carb_stats)
+                    
+                    # Add statistical analysis
+                    st.markdown("### Statistical Analysis")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Correlation between actual carbs and response within categories
+                        st.markdown("#### Correlation within Categories")
+                        correlations = carb_responses.groupby('carb_category').apply(
+                            lambda x: x['actual_carbs'].corr(x['glucose_rise'])
+                        ).round(3)
+                        st.dataframe(correlations)
+                    
+                    with col2:
+                        # Distribution of responses
+                        st.markdown("#### Response Distribution")
+                        response_dist = carb_responses.groupby('carb_category')['glucose_rise'].describe()
+                        st.dataframe(response_dist.round(1))    
                 
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
