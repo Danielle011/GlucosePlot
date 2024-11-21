@@ -561,7 +561,9 @@ def create_meal_response_analysis(meal_df, glucose_df):
         if not post_meal.empty:
             baseline = post_meal.iloc[0]['GlucoseValue']
             peak = post_meal['GlucoseValue'].max()
-            peak_time = (post_meal['GlucoseValue'].idxmax() - meal['meal_time']).total_seconds() / 60
+            # Fix the time calculation
+            peak_time = (post_meal.loc[post_meal['GlucoseValue'].idxmax(), 'DateTime'] - 
+                        meal['meal_time']).total_seconds() / 60
             
             meal_responses.append({
                 'meal_type': meal['meal_type'],
@@ -584,7 +586,7 @@ def create_meal_response_analysis(meal_df, glucose_df):
             y=response_df[mask]['glucose_rise'],
             mode='markers',
             name=meal_type,
-            text=[f"Rise: {rise:.1f}<br>Time to Peak: {time:.0f} min<br>Carbs: {carbs:.1f}g"
+            text=[f"Rise: {rise:.1f} mg/dL<br>Time to Peak: {time:.0f} min<br>Carbs: {carbs:.1f}g"
                   for rise, time, carbs in zip(
                       response_df[mask]['glucose_rise'],
                       response_df[mask]['time_to_peak'],
@@ -596,8 +598,16 @@ def create_meal_response_analysis(meal_df, glucose_df):
         title="Glucose Rise vs Carbohydrate Load by Meal Type",
         xaxis_title="Carbohydrates (g)",
         yaxis_title="Glucose Rise (mg/dL)",
-        showlegend=True
+        showlegend=True,
+        height=600,
+        template="plotly_white"
     )
+    
+    # Add reference lines
+    fig.add_hline(y=30, line_dash="dash", line_color="rgba(255,0,0,0.3)", 
+                  annotation_text="30 mg/dL rise")
+    fig.add_hline(y=50, line_dash="dash", line_color="rgba(255,0,0,0.5)", 
+                  annotation_text="50 mg/dL rise")
     
     return fig, response_df
 
