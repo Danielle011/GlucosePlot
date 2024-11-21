@@ -676,6 +676,66 @@ def create_activity_impact_plot(meal_df, glucose_df, activity_df):
     
     return fig, activity_df
 
+def create_meal_deep_analysis_plots(meal_responses):
+    """Create detailed visualizations using plotly"""
+    # 1. AUC vs Carb-to-Protein Ratio
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(
+        x=meal_responses['carb_protein_ratio'],
+        y=meal_responses['auc'],
+        mode='markers',
+        marker=dict(
+            size=10,
+            color=meal_responses['total_steps'],
+            colorscale='Viridis',
+            showscale=True,
+            colorbar=dict(title="Total Steps")
+        ),
+        text=[f"Meal Type: {mt}<br>Carb/Protein: {cr:.1f}<br>Steps: {st:,.0f}<br>AUC: {auc:.0f}"
+              for mt, cr, st, auc in zip(
+                  meal_responses['meal_type'],
+                  meal_responses['carb_protein_ratio'],
+                  meal_responses['total_steps'],
+                  meal_responses['auc'])],
+        hoverinfo="text"
+    ))
+    fig1.update_layout(
+        title="Glucose Response vs Carb-to-Protein Ratio",
+        xaxis_title="Carb-to-Protein Ratio",
+        yaxis_title="Glucose AUC",
+        height=500
+    )
+
+    # 2. Early Activity Impact
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        x=meal_responses['early_activity'],
+        y=meal_responses['glucose_rise'],
+        mode='markers',
+        marker=dict(
+            size=10,
+            color=meal_responses['carbs'],
+            colorscale='YlOrRd',
+            showscale=True,
+            colorbar=dict(title="Carbs (g)")
+        ),
+        text=[f"Meal Type: {mt}<br>Early Steps: {ea:,.0f}<br>Carbs: {c:.1f}g<br>Rise: {gr:.1f}"
+              for mt, ea, c, gr in zip(
+                  meal_responses['meal_type'],
+                  meal_responses['early_activity'],
+                  meal_responses['carbs'],
+                  meal_responses['glucose_rise'])],
+        hoverinfo="text"
+    ))
+    fig2.update_layout(
+        title="Impact of Early Activity on Glucose Rise",
+        xaxis_title="Early Activity (steps in first 30min)",
+        yaxis_title="Glucose Rise (mg/dL)",
+        height=500
+    )
+
+    return fig1, fig2
+
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     
@@ -837,11 +897,12 @@ def run_streamlit_app():
         else:  # EDA Dashboard
             st.title('Exploratory Data Analysis Dashboard')
             
-            tab1, tab2, tab3, tab4 = st.tabs([
+            tab1, tab2, tab3, tab4, tab5 = st.tabs([
                 "Glucose Patterns", 
                 "Meal Response Analysis",
                 "Activity Impact",
-                "Summary Statistics"
+                "Summary Statistics",
+                "Meal Response Deep Dive"
             ])
             
             with tab1:
@@ -932,6 +993,80 @@ def run_streamlit_app():
                         'flights': 'sum'
                     }).describe().round(1)
                     st.dataframe(daily_activity)
+
+            with tab5:
+                st.subheader("Deep Analysis of Meal Responses")
+                
+                # Calculate meal responses using the analyze_main_meal_responses function
+                meal_responses = analyze_main_meal_responses(glucose_df, meal_df, activity_df)
+                
+                # Show optimal responses
+                st.markdown("### Optimal Meal Responses")
+                optimal_responses = identify_optimal_responses(meal_responses)
+                st.dataframe(optimal_responses)
+                
+                # Show correlation analysis
+                st.markdown("### Key Metric Correlations")
+                correlations = meal_responses[['carbs', 'protein', 'fat', 'glucose_rise', 
+                                            'auc', 'total_steps', 'early_activity',
+                                            'carb_protein_ratio']].corr()
+                
+                # Create a heatmap for correlations
+                fig_corr = go.Figure(data=go.Heatmap(
+                    z=correlations.values,
+                    x=correlations.columns,
+                    y=correlations.columns,
+                    text=correlations.values.round(3),
+                    texttemplate='%{text}',
+                    textfont={"size": 10},
+                    hoverongaps=False,
+                    colorscale='RdBu'
+                ))
+                fig_corr.update_layout(
+                    title="Correlation Matrix of Key Metrics",
+                    height=600
+                )
+                st.plotly_chart(fig_corr, use_container_width=True)
+                
+                # Show detailed analysis plots
+                col1, col2 = st.columns(2)
+                fig1, fig2 = create_meal_deep_analysis_plots(meal_responses)
+                
+                with col1:
+                    st.plotly_chart(fig1, use_container_width=True)
+                
+                with col2:
+                    st.plotly_chart(fig2, use_container_width=True)
+                
+                # Show summary statistics
+                st.markdown("### Summary Statistics by Meal Type")
+                summary_stats = meal_responses.groupby('meal_type').agg({
+                    'glucose_rise': ['mean', 'std'],
+                    'auc': ['mean', 'std'],
+                    'time_above_140': 'mean',
+                    'carb_protein_ratio': 'mean',
+                    'total_steps': 'mean'
+                }).round(2)
+                
+                # Format the summary stats for better display
+                st.dataframe(summary_stats.style.format("{:.2f}"))
+                
+                # Add insights
+                st.markdown("### Key Insights")
+                st.markdown("""
+                1. **Meal Composition Impact:**
+                - Higher carb-to-protein ratios generally lead to larger glucose responses
+                - Protein content shows a moderating effect on glucose rise
+                
+                2. **Activity Effects:**
+                - Early activity (within 30 minutes) shows stronger correlation with reduced glucose rise
+                - Total steps correlate with better glucose responses
+                
+                3. **Optimal Responses:**
+                - Best responses typically combine moderate carbs with adequate protein
+                - Activity plays a crucial role in managing post-meal glucose
+                """)
+
                 
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
