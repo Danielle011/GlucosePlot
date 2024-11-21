@@ -1316,36 +1316,36 @@ def run_streamlit_app():
                 """)
 
             with tab6:
-                    st.subheader("Carbohydrate Category Analysis")
-    
-                    # Create the analysis
-                    carb_fig, carb_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
-                    
-                    # Show the visualization
-                    st.plotly_chart(carb_fig, use_container_width=True)
-                    
-                    # Show summary statistics
-                    st.markdown("### Summary Statistics by Category")
-                    st.dataframe(carb_stats)
-                    
-                    # Add statistical analysis
-                    st.markdown("### Statistical Analysis")
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # Correlation between actual carbs and response within categories
-                        st.markdown("#### Correlation within Categories")
-                        correlations = carb_responses.groupby('carb_category').apply(
-                            lambda x: x['actual_carbs'].corr(x['glucose_rise'])
-                        ).round(3)
-                        st.dataframe(correlations)
-                    
-                    with col2:
-                        # Distribution of responses
-                        st.markdown("#### Response Distribution")
-                        response_dist = carb_responses.groupby('carb_category')['glucose_rise'].describe()
-                        st.dataframe(response_dist.round(1))    
+                st.subheader("Carbohydrate Category Analysis")
+
+                # Create the analysis
+                carb_fig, carb_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
                 
+                # Show the visualization
+                st.plotly_chart(carb_fig, use_container_width=True)
+                
+                # Show summary statistics
+                st.markdown("### Summary Statistics by Category")
+                st.dataframe(carb_stats)
+                
+                # Add statistical analysis
+                st.markdown("### Statistical Analysis")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Correlation between actual carbs and response within categories
+                    st.markdown("#### Correlation within Categories")
+                    correlations = carb_responses.groupby('carb_category').apply(
+                        lambda x: x['actual_carbs'].corr(x['glucose_rise'])
+                    ).round(3)
+                    st.dataframe(correlations)
+                
+                with col2:
+                    # Distribution of responses
+                    st.markdown("#### Response Distribution")
+                    response_dist = carb_responses.groupby('carb_category')['glucose_rise'].describe()
+                    st.dataframe(response_dist.round(1))
+
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         st.info("Please check if all required data files are present in the data directory.")
