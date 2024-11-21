@@ -676,6 +676,157 @@ def create_activity_impact_plot(meal_df, glucose_df, activity_df):
     
     return fig, activity_df
 
+# Add these functions after your existing functions but before run_streamlit_app()
+
+def analyze_main_meal_responses(glucose_df, meal_df, activity_df):
+    """Analyze glucose responses for main meals only"""
+    windows = list(range(15, 121, 15))
+    meal_results = []
+    
+    # Filter for main meals only
+    main_meals = meal_df[meal_df['meal_type'].isin(['Breakfast', 'Lunch', 'Dinner'])]
+    
+    for _, meal in main_meals.iterrows():
+        meal_time = meal['meal_time']
+        meal_end = meal_time + pd.Timedelta(hours=2)
+        
+        glucose_window = glucose_df[
+            (glucose_df['DateTime'] >= meal_time) &
+            (glucose_df['DateTime'] <= meal_end)
+        ]
+        
+        activity_window = activity_df[
+            (activity_df['start_time'] >= meal_time) &
+            (activity_df['start_time'] <= meal_end)
+        ]
+        
+        if not glucose_window.empty:
+            baseline = glucose_window.iloc[0]['GlucoseValue']
+            peak = glucose_window['GlucoseValue'].max()
+            peak_time = (glucose_window.loc[glucose_window['GlucoseValue'].idxmax(), 'DateTime'] - 
+                        meal_time).total_seconds() / 60
+            
+            # Calculate area under curve (AUC) for glucose response
+            glucose_values = glucose_window['GlucoseValue'].values
+            time_points = np.arange(len(glucose_values))
+            auc = np.trapz(glucose_values - baseline, time_points)
+            
+            # Calculate time spent above 140 mg/dL
+            time_above_140 = (glucose_window['GlucoseValue'] > 140).mean() * 100
+            
+            # Activity metrics
+            total_steps = activity_window['steps'].sum() if not activity_window.empty else 0
+            total_flights = activity_window['flights'].sum() if not activity_window.empty else 0
+            
+            # Calculate early activity (first 30 minutes) vs later activity
+            early_activity = activity_window[
+                activity_window['start_time'] <= meal_time + pd.Timedelta(minutes=30)
+            ]['steps'].sum()
+            
+            later_activity = total_steps - early_activity
+            
+            meal_results.append({
+                'meal_time': meal_time,
+                'meal_type': meal['meal_type'],
+                'carbs': meal['carbohydrates'],
+                'protein': meal['protein'],
+                'fat': meal['fat'],
+                'baseline_glucose': baseline,
+                'peak_glucose': peak,
+                'glucose_rise': peak - baseline,
+                'time_to_peak': peak_time,
+                'auc': auc,
+                'time_above_140': time_above_140,
+                'total_steps': total_steps,
+                'total_flights': total_flights,
+                'early_activity': early_activity,
+                'later_activity': later_activity,
+                'carb_protein_ratio': meal['carbohydrates'] / meal['protein'] if meal['protein'] > 0 else np.nan
+            })
+    
+    return pd.DataFrame(meal_results)
+
+def identify_optimal_responses(meal_responses):
+    """Identify optimal meal responses with multiple criteria"""
+    
+    # Calculate composite score based on multiple metrics
+    meal_responses['composite_score'] = (
+        # Normalize and weight each metric
+        (meal_responses['glucose_rise'] / meal_responses['carbs'] * 0.3) +
+        (meal_responses['time_above_140'] * 0.3) +
+        (meal_responses['auc'] / meal_responses['carbs'] * 0.4)
+    )
+    
+    # Get top 10 best responses (lowest composite scores)
+    best_responses = meal_responses.nsmallest(10, 'composite_score')
+    
+    return best_responses[['meal_type', 'carbs', 'protein', 'fat', 
+                          'glucose_rise', 'time_above_140', 'auc',
+                          'total_steps', 'early_activity', 'later_activity',
+                          'composite_score']]
+
+def create_meal_deep_analysis_plots(meal_responses):
+    """Create detailed visualizations using plotly"""
+    # 1. AUC vs Carb-to-Protein Ratio
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(
+        x=meal_responses['carb_protein_ratio'],
+        y=meal_responses['auc'],
+        mode='markers',
+        marker=dict(
+            size=10,
+            color=meal_responses['total_steps'],
+            colorscale='Viridis',
+            showscale=True,
+            colorbar=dict(title="Total Steps")
+        ),
+        text=[f"Meal Type: {mt}<br>Carb/Protein: {cr:.1f}<br>Steps: {st:,.0f}<br>AUC: {auc:.0f}"
+              for mt, cr, st, auc in zip(
+                  meal_responses['meal_type'],
+                  meal_responses['carb_protein_ratio'],
+                  meal_responses['total_steps'],
+                  meal_responses['auc'])],
+        hoverinfo="text"
+    ))
+    fig1.update_layout(
+        title="Glucose Response vs Carb-to-Protein Ratio",
+        xaxis_title="Carb-to-Protein Ratio",
+        yaxis_title="Glucose AUC",
+        height=500,
+        template="plotly_white"
+    )
+
+    # 2. Early Activity Impact
+    fig2 = go.Figure()
+    fig2.add_trace(go.Scatter(
+        x=meal_responses['early_activity'],
+        y=meal_responses['glucose_rise'],
+        mode='markers',
+        marker=dict(
+            size=10,
+            color=meal_responses['carbs'],
+            colorscale='YlOrRd',
+            showscale=True,
+            colorbar=dict(title="Carbs (g)")
+        ),
+        text=[f"Meal Type: {mt}<br>Early Steps: {ea:,.0f}<br>Carbs: {c:.1f}g<br>Rise: {gr:.1f}"
+              for mt, ea, c, gr in zip(
+                  meal_responses['meal_type'],
+                  meal_responses['early_activity'],
+                  meal_responses['carbs'],
+                  meal_responses['glucose_rise'])],
+        hoverinfo="text"
+    ))
+    fig2.update_layout(
+        title="Impact of Early Activity on Glucose Rise",
+        xaxis_title="Early Activity (steps in first 30min)",
+        yaxis_title="Glucose Rise (mg/dL)",
+        height=500,
+        template="plotly_white"
+    )
+
+    return fig1, fig2
+
 def create_meal_deep_analysis_plots(meal_responses):
     """Create detailed visualizations using plotly"""
     # 1. AUC vs Carb-to-Protein Ratio
