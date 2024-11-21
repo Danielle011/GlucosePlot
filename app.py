@@ -525,7 +525,6 @@ def create_activity_pattern_plot(activity_df):
     
     return fig
 
-# Modify your run_streamlit_app function
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     
@@ -542,9 +541,145 @@ def run_streamlit_app():
         
         if page == "Meal Analysis Dashboard":
             st.title('Blood Glucose Analysis Dashboard')
-            # Your existing dashboard code here
-            # (keep all your existing dashboard code)
             
+            st.sidebar.markdown("### Dataset Information")
+            date_min = meal_df['meal_time'].dt.date.min()
+            date_max = meal_df['meal_time'].dt.date.max()
+            
+            st.sidebar.markdown(f"Available Date Range:\n"
+                              f"{date_min} to {date_max}\n\n"
+                              f"Total Meals: {len(meal_df):,}")
+            
+            # Default to showing most recent week
+            default_end_date = date_max
+            default_start_date = max(date_min, default_end_date - pd.Timedelta(days=7))
+            
+            date_range = st.sidebar.date_input(
+                "Select Date Range",
+                value=(default_start_date, default_end_date),
+                min_value=date_min,
+                max_value=date_max
+            )
+            
+            # Filter meals by date
+            start_date, end_date = date_range
+            meal_mask = (meal_df['meal_time'].dt.date >= start_date) & \
+                       (meal_df['meal_time'].dt.date <= end_date)
+            meals_filtered = meal_df[meal_mask]
+            
+            if not meals_filtered.empty:
+                # Create meal selection dropdown with useful information
+                meal_options = {
+                    f"{meal['meal_time'].strftime('%Y-%m-%d %H:%M')} - "
+                    f"{meal['food_name']} "
+                    f"(Carbs: {meal['carbohydrates']:.0f}g)": idx
+                    for idx, meal in meals_filtered.iterrows()
+                }
+                
+                selected_meal_label = st.selectbox(
+                    'Select a meal to view:',
+                    options=list(meal_options.keys())
+                )
+                
+                selected_meal_idx = meal_options[selected_meal_label]
+                selected_meal = meals_filtered.loc[selected_meal_idx]
+                
+                # Get data for selected meal
+                glucose_window, activity_window, end_time = get_data_for_meal(
+                    glucose_df, 
+                    activity_df,
+                    selected_meal['meal_time'],
+                    selected_meal['measurement_number'],
+                    full_meal_df
+                )
+
+                # Calculate window duration
+                window_duration = (end_time - selected_meal['meal_time']).total_seconds() / 60
+                
+                # Create legend-style activity guide
+                st.markdown(
+                    """
+                    <div style="
+                        display: inline-flex;
+                        align-items: center;
+                        padding: 8px 16px;
+                        background-color: white;
+                        border: 1px solid #333;
+                    ">
+                        <div style="display: flex; gap: 20px; align-items: center;">
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                level_map = {
+                    'Inactive': 0.1,
+                    'Light': 0.2,
+                    'Moderate': 0.3,
+                    'Active': 0.7,
+                    'Very Active': 0.85,
+                    'Intense': 1.0
+                }
+
+                for level, opacity in level_map.items():
+                    st.markdown(
+                        f'<div style="display: flex; align-items: center; gap: 5px;">'
+                        f'<div style="'
+                        f'width: 15px;'
+                        f'height: 15px;'
+                        f'background-color: rgba(255,0,0,{opacity});'
+                        f'"></div>'
+                        f'<span style="font-size: 0.9em;">{level}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+                st.markdown("</div></div>", unsafe_allow_html=True)
+
+                # Display chart
+                fig = create_glucose_meal_activity_chart_gradient(
+                    glucose_window, 
+                    pd.DataFrame([selected_meal]), 
+                    activity_window,
+                    end_time,
+                    0
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Display metrics in sidebar
+                st.sidebar.markdown("### Window Information")
+                st.sidebar.markdown(f"- Duration: {window_duration:.0f} minutes")
+                
+                # Calculate glucose metrics
+                initial_glucose = glucose_window.iloc[0]['GlucoseValue']
+                peak_glucose = glucose_window['GlucoseValue'].max()
+                peak_time = (glucose_window.loc[glucose_window['GlucoseValue'].idxmax(), 'DateTime'] - 
+                            selected_meal['meal_time']).total_seconds() / 60
+                
+                st.sidebar.markdown("### Glucose Response")
+                st.sidebar.markdown(f"- Initial: {initial_glucose:.0f} mg/dL")
+                st.sidebar.markdown(f"- Peak: {peak_glucose:.0f} mg/dL")
+                st.sidebar.markdown(f"- Time to Peak: {peak_time:.0f} min")
+                
+                st.sidebar.markdown("### Meal Content")
+                st.sidebar.markdown(f"- Food: {selected_meal['food_name']}")
+                st.sidebar.markdown(f"- Calories: {selected_meal['calories']:.0f} kcal")
+                st.sidebar.markdown(f"- Carbs: {selected_meal['carbohydrates']:.0f}g")
+                st.sidebar.markdown(f"- Protein: {selected_meal['protein']:.0f}g")
+                st.sidebar.markdown(f"- Fat: {selected_meal['fat']:.0f}g")
+                
+                if not activity_window.empty:
+                    st.sidebar.markdown("### Activity")
+                    for _, activity in activity_window.iterrows():
+                        minutes_from_meal = (activity['start_time'] - 
+                                           selected_meal['meal_time']).total_seconds() / 60
+                        st.sidebar.markdown(
+                            f"- At +{minutes_from_meal:.0f} min:\n"
+                            f"  - Steps: {activity['steps']:,}\n"
+                            f"  - Level: {activity['activity_level']}"
+                        )
+            else:
+                st.info('No meals found in the selected date range.')
+                
         else:  # EDA Dashboard
             st.title('Exploratory Data Analysis Dashboard')
             
