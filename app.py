@@ -1,3 +1,380 @@
+import streamlit as st
+import pandas as pd
+import plotly.graph_objects as go
+from datetime import timezone, timedelta
+import numpy as np
+import plotly.express as px
+import plotly.figure_factory as ff
+
+# Set timezone
+KST = timezone(timedelta(hours=9))
+
+@st.cache_data(ttl=3600)  # Cache for 1 hour
+def load_glucose_data():
+    """Load pre-filtered glucose data"""
+    return pd.read_csv(
+        'data/original_glucose_data.csv',
+        usecols=['MeasurementNumber', 'DateTime', 'GlucoseValue'],
+        parse_dates=['DateTime']
+    )
+
+@st.cache_data(ttl=3600)
+def load_full_meal_data():
+    """Load meal data including snacks"""
+    return pd.read_csv(
+        'data/processed_meal_data.csv',
+        parse_dates=['meal_time']
+    )
+
+@st.cache_data(ttl=3600)
+def load_meal_data():
+    """Load and preprocess meal data, excluding snacks"""
+    meal_df = load_full_meal_data()
+    return meal_df[meal_df['meal_type'] != 'Snack'].reset_index(drop=True)
+
+@st.cache_data(ttl=3600)
+def load_activity_data():
+    """Load and preprocess activity data"""
+    return pd.read_csv(
+        'data/activity_data_with_levels.csv',
+        parse_dates=['start_time', 'end_time']
+    )
+
+def get_activity_color_gradient(activity_level):
+    """Returns a color based on activity level using a gradient scale"""
+    level_map = {
+        'Inactive': 0.1,
+        'Light': 0.2,
+        'Moderate': 0.3,
+        'Active': 0.7,
+        'Very Active': 0.85,
+        'Intense': 1.0
+    }
+    opacity = level_map.get(activity_level, 0.2)
+    return f"rgba(255, 0, 0, {opacity})"
+
+def format_time_12hr(dt):
+    """Convert datetime to 12-hour format string"""
+    return dt.strftime("%I:%M %p").lstrip("0")
+
+@st.cache_data
+def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number, full_meal_df):
+    """Efficiently get relevant glucose and activity data for a specific meal"""
+    # Find the next meal time (including snacks)
+    next_meal = full_meal_df[full_meal_df['meal_time'] > meal_time].iloc[0] if not full_meal_df[full_meal_df['meal_time'] > meal_time].empty else None
+    
+    # Set end time based on next meal or default 2-hour window
+    if next_meal is not None and (next_meal['meal_time'] - meal_time) <= pd.Timedelta(hours=2):
+        end_time = next_meal['meal_time']
+    else:
+        end_time = meal_time + pd.Timedelta(hours=2)
+    
+    # Get glucose data for this meal
+    glucose_window = glucose_df[
+        (glucose_df['MeasurementNumber'] == meal_number) &
+        (glucose_df['DateTime'] >= meal_time) & 
+        (glucose_df['DateTime'] <= end_time)
+    ].copy()
+    
+    # Get activity data for this meal
+    activity_window = activity_df[
+        (activity_df['start_time'] >= meal_time) & 
+        (activity_df['end_time'] <= end_time)
+    ].copy()
+    
+    return glucose_window, activity_window, end_time
+
+def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
+    """Creates chart with gradient colors for activities"""
+    meal_time = meal_data.iloc[selected_idx]['meal_time']
+    
+    # Add relative time in minutes to glucose data
+    glucose_window['minutes_from_meal'] = (
+        (glucose_window['DateTime'] - meal_time).dt.total_seconds() / 60
+    ).round().astype(int)
+    
+    # Format meal information for subtitle
+    meal = meal_data.iloc[selected_idx]
+    meal_subtitle = (
+        f"{meal_time.strftime('%I:%M %p')} | "
+        f"{meal['food_name']} | "
+        f"Calories: {meal['calories']:.0f} | "
+        f"Carbs: {meal['carbohydrates']:.1f}g | "
+        f"Protein: {meal['protein']:.1f}g | "
+        f"Fat: {meal['fat']:.1f}g"
+    )
+    
+    fig = go.Figure()
+
+    # Add activity data as background shading with gradient colors
+    for _, activity in activity_window[activity_window['steps'] > 100].iterrows():
+        color = get_activity_color_gradient(activity['activity_level'])
+        
+        # Create background shade
+        fig.add_trace(
+            go.Scatter(
+                x=[activity['start_time'], activity['start_time'], 
+                   activity['end_time'], activity['end_time']],
+                y=[0, 200, 200, 0],
+                fill='toself',
+                mode='none',
+                showlegend=False,
+                fillcolor=color,
+                hoverinfo='skip'
+            )
+        )
+        
+        # Create hover points
+        hover_times = pd.date_range(
+            start=activity['start_time'],
+            end=activity['end_time'],
+            periods=5
+        )
+        
+        hover_text = (
+            f"{format_time_12hr(activity['start_time'])} - {format_time_12hr(activity['end_time'])}<br>" +
+            f"Steps: {int(activity['steps']):,} steps<br>" +
+            f"Distance: {activity['distance']:.1f} km<br>" +
+            f"Flights: {int(activity['flights'])} flights<br>" +
+            f"<span style='background-color: {color}; color: white; padding: 2px 6px; border-radius: 3px;'>" +
+            f"{activity['activity_level']}</span>"
+        )
+        
+        fig.add_trace(
+            go.Scatter(
+                x=hover_times,
+                y=[100] * len(hover_times),
+                mode='markers',
+                marker=dict(
+                    size=20,
+                    color='rgba(0,0,0,0)',
+                    symbol='square',
+                ),
+                hoverinfo='text',
+                hovertext=hover_text,
+                showlegend=False,
+                name='',
+            )
+        )
+    
+    # Add glucose data
+    fig.add_trace(
+        go.Scatter(
+            x=glucose_window['DateTime'],
+            y=glucose_window['GlucoseValue'],
+            mode='lines+markers',
+            name='Glucose',
+            line=dict(color='#000035', width=1.5),
+            marker=dict(size=5),
+            customdata=glucose_window['minutes_from_meal'],
+            hovertemplate=(
+                '<b>Time:</b> +%{customdata} min<br>' +
+                '<b>Glucose:</b> %{y:.0f} mg/dL<br>' +
+                '<extra></extra>'
+            )
+        )
+    )
+    
+    # Create custom tick values every 15 minutes
+    time_range = pd.date_range(start=meal_time, end=end_time, freq='15min')
+    tick_values = time_range.tolist()
+    tick_texts = [f"+{int((t - meal_time).total_seconds() / 60)}" for t in time_range]
+    
+    # Update layout with new styling
+    fig.update_layout(
+        title=dict(
+            text=(
+                f'Blood Glucose Pattern after Meal on {meal_time.strftime("%Y-%m-%d")}<br>'
+                f'<span style="font-size: 14px; color: #000035; background-color: #f8f9fa; '
+                f'padding: 5px; border-radius: 4px; margin-top: 8px; display: inline-block">'
+                f'{meal_subtitle}</span>'
+            ),
+            font=dict(size=16),
+            y=0.95,
+            x=0,
+            xanchor='left'
+        ),
+        xaxis=dict(
+            title='Time (minutes from meal)',
+            showgrid=False,
+            zeroline=False,
+            ticktext=tick_texts,
+            tickvals=tick_values,
+            title_font=dict(size=12, color='black'),
+            tickfont=dict(size=10, color='black'),
+            linecolor='black',
+            mirror=False
+        ),
+        yaxis=dict(
+            title='Blood Glucose (mg/dL)',
+            showgrid=False,
+            zeroline=False,
+            title_font=dict(size=12, color='black'),
+            tickfont=dict(size=10, color='black'),
+            linecolor='black',
+            mirror=False,
+            range=[0, max(200, glucose_window['GlucoseValue'].max() * 1.1)]
+        ),
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        hovermode='closest',
+        showlegend=False,
+        margin=dict(t=100, l=60, r=20, b=60)
+    )
+    
+    # Add only 140 reference line
+    fig.add_hline(y=140, line_dash="dot", line_color="rgba(0, 0, 0, 0.3)", line_width=1)
+    
+    fig.update_xaxes(range=[meal_time, end_time])
+    
+    return fig
+
+# Add new functions for EDA visualizations
+def create_glucose_distribution_plot(glucose_df):
+    """Create glucose value distribution plot"""
+    fig = go.Figure()
+    
+    # Add histogram
+    fig.add_trace(go.Histogram(
+        x=glucose_df['GlucoseValue'],
+        nbinsx=50,
+        name='Distribution'
+    ))
+    
+    # Add vertical line at 140
+    fig.add_vline(x=140, line_dash="dash", line_color="red", annotation_text="Target Limit (140)")
+    
+    # Add stats annotation
+    stats_text = (
+        f"Mean: {glucose_df['GlucoseValue'].mean():.1f}<br>"
+        f"Median: {glucose_df['GlucoseValue'].median():.1f}<br>"
+        f"Std: {glucose_df['GlucoseValue'].std():.1f}<br>"
+        f"95th percentile: {glucose_df['GlucoseValue'].quantile(0.95):.1f}"
+    )
+    
+    fig.add_annotation(
+        x=0.95,
+        y=0.95,
+        xref="paper",
+        yref="paper",
+        text=stats_text,
+        showarrow=False,
+        align="right",
+        bgcolor="white",
+        bordercolor="black",
+        borderwidth=1
+    )
+    
+    fig.update_layout(
+        title="Distribution of Glucose Values",
+        xaxis_title="Glucose Value (mg/dL)",
+        yaxis_title="Count",
+        showlegend=False
+    )
+    
+    return fig
+
+def create_daily_glucose_pattern(glucose_df):
+    """Create average glucose by hour plot"""
+    # Calculate hourly statistics
+    glucose_df['Hour'] = glucose_df['DateTime'].dt.hour
+    hourly_stats = glucose_df.groupby('Hour')['GlucoseValue'].agg(['mean', 'std']).reset_index()
+    
+    fig = go.Figure()
+    
+    # Add mean line
+    fig.add_trace(go.Scatter(
+        x=hourly_stats['Hour'],
+        y=hourly_stats['mean'],
+        mode='lines',
+        name='Mean',
+        line=dict(color='blue'),
+    ))
+    
+    # Add confidence interval
+    fig.add_trace(go.Scatter(
+        x=hourly_stats['Hour'].tolist() + hourly_stats['Hour'].tolist()[::-1],
+        y=(hourly_stats['mean'] + hourly_stats['std']).tolist() + 
+          (hourly_stats['mean'] - hourly_stats['std']).tolist()[::-1],
+        fill='toself',
+        fillcolor='rgba(0,0,255,0.1)',
+        line=dict(color='rgba(255,255,255,0)'),
+        name='±1 SD'
+    ))
+    
+    fig.update_layout(
+        title="Average Glucose Pattern by Hour of Day",
+        xaxis_title="Hour of Day",
+        yaxis_title="Glucose Value (mg/dL)",
+        showlegend=True
+    )
+    
+    return fig
+
+def create_meal_macronutrient_plot(meal_df):
+    """Create macronutrient distribution by meal type plot"""
+    fig = go.Figure()
+    
+    meal_types = meal_df['meal_type'].unique()
+    
+    for nutrient in ['carbohydrates', 'protein', 'fat']:
+        fig.add_trace(go.Box(
+            x=meal_df['meal_type'],
+            y=meal_df[nutrient],
+            name=nutrient.capitalize(),
+            boxpoints='outliers'
+        ))
+    
+    fig.update_layout(
+        title="Macronutrient Distribution by Meal Type",
+        xaxis_title="Meal Type",
+        yaxis_title="Grams",
+        boxmode='group'
+    )
+    
+    return fig
+
+def create_activity_pattern_plot(activity_df):
+    """Create activity pattern plot"""
+    # Calculate hourly averages
+    activity_df['Hour'] = activity_df['start_time'].dt.hour
+    hourly_stats = activity_df.groupby('Hour').agg({
+        'steps': 'mean',
+        'flights': 'mean'
+    }).reset_index()
+    
+    fig = go.Figure()
+    
+    # Add steps line
+    fig.add_trace(go.Scatter(
+        x=hourly_stats['Hour'],
+        y=hourly_stats['steps'],
+        name='Steps',
+        line=dict(color='blue')
+    ))
+    
+    # Add flights line on secondary y-axis
+    fig.add_trace(go.Scatter(
+        x=hourly_stats['Hour'],
+        y=hourly_stats['flights'],
+        name='Flights',
+        line=dict(color='red'),
+        yaxis='y2'
+    ))
+    
+    fig.update_layout(
+        title="Activity Patterns by Hour of Day",
+        xaxis_title="Hour of Day",
+        yaxis_title="Average Steps",
+        yaxis2=dict(
+            title="Average Flights",
+            overlaying='y',
+            side='right'
+        )
+    )
+    
+    return fig
+
 # Add these imports at the top of your file
 import plotly.express as px
 import plotly.figure_factory as ff
