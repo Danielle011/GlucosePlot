@@ -525,6 +525,147 @@ def create_activity_pattern_plot(activity_df):
     
     return fig
 
+def create_time_in_range_plot(glucose_df):
+    """Create time in range pie chart"""
+    time_in_range = (glucose_df['GlucoseValue'] <= 140).mean() * 100
+    above_range = 100 - time_in_range
+    
+    fig = go.Figure(data=[go.Pie(
+        labels=['≤140 mg/dL', '>140 mg/dL'],
+        values=[time_in_range, above_range],
+        hole=.3,
+        marker_colors=['#2ecc71', '#e74c3c'],
+        textinfo='label+percent',
+        textposition='inside',
+        insidetextorientation='radial'
+    )])
+    
+    fig.update_layout(
+        title="Time in Range Analysis",
+        annotations=[dict(text=f"{time_in_range:.1f}%", x=0.5, y=0.5, font_size=20, showarrow=False)]
+    )
+    
+    return fig
+
+def create_meal_response_analysis(meal_df, glucose_df):
+    """Create meal response analysis plots"""
+    meal_responses = []
+    
+    for _, meal in meal_df.iterrows():
+        # Get glucose data for 2 hours after meal
+        post_meal = glucose_df[
+            (glucose_df['DateTime'] >= meal['meal_time']) &
+            (glucose_df['DateTime'] <= meal['meal_time'] + pd.Timedelta(hours=2))
+        ]
+        
+        if not post_meal.empty:
+            baseline = post_meal.iloc[0]['GlucoseValue']
+            peak = post_meal['GlucoseValue'].max()
+            peak_time = (post_meal['GlucoseValue'].idxmax() - meal['meal_time']).total_seconds() / 60
+            
+            meal_responses.append({
+                'meal_type': meal['meal_type'],
+                'carbs': meal['carbohydrates'],
+                'glucose_rise': peak - baseline,
+                'time_to_peak': peak_time,
+                'baseline': baseline,
+                'peak': peak
+            })
+    
+    response_df = pd.DataFrame(meal_responses)
+    
+    # Create scatter plot
+    fig = go.Figure()
+    
+    for meal_type in response_df['meal_type'].unique():
+        mask = response_df['meal_type'] == meal_type
+        fig.add_trace(go.Scatter(
+            x=response_df[mask]['carbs'],
+            y=response_df[mask]['glucose_rise'],
+            mode='markers',
+            name=meal_type,
+            text=[f"Rise: {rise:.1f}<br>Time to Peak: {time:.0f} min<br>Carbs: {carbs:.1f}g"
+                  for rise, time, carbs in zip(
+                      response_df[mask]['glucose_rise'],
+                      response_df[mask]['time_to_peak'],
+                      response_df[mask]['carbs'])],
+            hoverinfo="text+name"
+        ))
+    
+    fig.update_layout(
+        title="Glucose Rise vs Carbohydrate Load by Meal Type",
+        xaxis_title="Carbohydrates (g)",
+        yaxis_title="Glucose Rise (mg/dL)",
+        showlegend=True
+    )
+    
+    return fig, response_df
+
+def create_activity_impact_plot(meal_df, glucose_df, activity_df):
+    """Analyze activity impact on glucose response"""
+    meal_activity = []
+    
+    for _, meal in meal_df.iterrows():
+        # Get 2-hour windows
+        end_time = meal['meal_time'] + pd.Timedelta(hours=2)
+        
+        # Get glucose data
+        glucose_window = glucose_df[
+            (glucose_df['DateTime'] >= meal['meal_time']) &
+            (glucose_df['DateTime'] <= end_time)
+        ]
+        
+        # Get activity data
+        activity_window = activity_df[
+            (activity_df['start_time'] >= meal['meal_time']) &
+            (activity_df['start_time'] <= end_time)
+        ]
+        
+        if not glucose_window.empty:
+            total_steps = activity_window['steps'].sum()
+            glucose_rise = glucose_window['GlucoseValue'].max() - glucose_window.iloc[0]['GlucoseValue']
+            
+            meal_activity.append({
+                'meal_type': meal['meal_type'],
+                'carbs': meal['carbohydrates'],
+                'total_steps': total_steps,
+                'glucose_rise': glucose_rise
+            })
+    
+    activity_df = pd.DataFrame(meal_activity)
+    
+    # Create scatter plot
+    fig = go.Figure()
+    
+    # Add scatter plot with color based on carbs
+    fig.add_trace(go.Scatter(
+        x=activity_df['total_steps'],
+        y=activity_df['glucose_rise'],
+        mode='markers',
+        marker=dict(
+            size=10,
+            color=activity_df['carbs'],
+            colorscale='Viridis',
+            showscale=True,
+            colorbar=dict(title="Carbs (g)")
+        ),
+        text=[f"Meal Type: {mt}<br>Steps: {steps:,.0f}<br>Carbs: {carbs:.1f}g<br>Rise: {rise:.1f} mg/dL"
+              for mt, steps, carbs, rise in zip(
+                  activity_df['meal_type'],
+                  activity_df['total_steps'],
+                  activity_df['carbs'],
+                  activity_df['glucose_rise'])],
+        hoverinfo="text"
+    ))
+    
+    fig.update_layout(
+        title="Impact of Post-Meal Activity on Glucose Rise",
+        xaxis_title="Total Steps in 2h Window",
+        yaxis_title="Glucose Rise (mg/dL)"
+    )
+    
+    return fig, activity_df
+
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     
@@ -679,58 +820,108 @@ def run_streamlit_app():
                         )
             else:
                 st.info('No meals found in the selected date range.')
-                
+
+
+        # Modify the EDA section in your run_streamlit_app function
+        # Replace the EDA dashboard section with this:
         else:  # EDA Dashboard
             st.title('Exploratory Data Analysis Dashboard')
             
-            # Add tabs for different aspects of EDA
-            tab1, tab2, tab3 = st.tabs(["Glucose Patterns", "Meal Patterns", "Activity Patterns"])
+            tab1, tab2, tab3, tab4 = st.tabs([
+                "Glucose Patterns", 
+                "Meal Response Analysis",
+                "Activity Impact",
+                "Summary Statistics"
+            ])
             
             with tab1:
-                st.subheader("Glucose Value Distribution and Patterns")
-                col1, col2 = st.columns(2)
+                st.subheader("Glucose Patterns and Time in Range")
                 
+                col1, col2 = st.columns(2)
                 with col1:
                     fig_dist = create_glucose_distribution_plot(glucose_df)
                     st.plotly_chart(fig_dist, use_container_width=True)
                 
                 with col2:
-                    fig_daily = create_daily_glucose_pattern(glucose_df)
-                    st.plotly_chart(fig_daily, use_container_width=True)
+                    fig_time_range = create_time_in_range_plot(glucose_df)
+                    st.plotly_chart(fig_time_range, use_container_width=True)
                 
-                # Add key statistics
-                st.markdown("### Key Glucose Statistics")
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric("Mean Glucose", f"{glucose_df['GlucoseValue'].mean():.1f}")
-                col2.metric("Time in Range (<140)", f"{(glucose_df['GlucoseValue'] <= 140).mean()*100:.1f}%")
-                col3.metric("Standard Deviation", f"{glucose_df['GlucoseValue'].std():.1f}")
-                col4.metric("95th Percentile", f"{glucose_df['GlucoseValue'].quantile(0.95):.1f}")
+                st.subheader("Daily Glucose Pattern")
+                fig_daily = create_daily_glucose_pattern(glucose_df)
+                st.plotly_chart(fig_daily, use_container_width=True)
             
             with tab2:
-                st.subheader("Meal Composition Analysis")
-                fig_macro = create_meal_macronutrient_plot(meal_df)
-                st.plotly_chart(fig_macro, use_container_width=True)
+                st.subheader("Meal Response Analysis")
                 
-                # Add meal statistics
-                st.markdown("### Average Macronutrients by Meal Type")
-                st.dataframe(
-                    meal_df.groupby('meal_type')[['carbohydrates', 'protein', 'fat']].mean().round(1)
-                )
-            
-            with tab3:
-                st.subheader("Activity Patterns")
-                fig_activity = create_activity_pattern_plot(activity_df)
-                st.plotly_chart(fig_activity, use_container_width=True)
+                fig_response, response_df = create_meal_response_analysis(meal_df, glucose_df)
+                st.plotly_chart(fig_response, use_container_width=True)
                 
-                # Add activity statistics
-                st.markdown("### Activity Statistics")
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Average Daily Steps", 
-                             f"{int(activity_df.groupby(activity_df['start_time'].dt.date)['steps'].sum().mean()):,}")
+                    st.markdown("### Average Glucose Rise by Meal Type")
+                    st.dataframe(
+                        response_df.groupby('meal_type').agg({
+                            'glucose_rise': ['mean', 'std'],
+                            'time_to_peak': ['mean', 'std']
+                        }).round(1)
+                    )
+                
                 with col2:
-                    st.metric("Average Daily Flights", 
-                             f"{activity_df.groupby(activity_df['start_time'].dt.date)['flights'].sum().mean():.1f}")
+                    fig_macro = create_meal_macronutrient_plot(meal_df)
+                    st.plotly_chart(fig_macro, use_container_width=True)
+            
+            with tab3:
+                st.subheader("Activity Impact Analysis")
+                
+                fig_activity_impact, activity_impact_df = create_activity_impact_plot(
+                    meal_df, glucose_df, activity_df
+                )
+                st.plotly_chart(fig_activity_impact, use_container_width=True)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    fig_activity = create_activity_pattern_plot(activity_df)
+                    st.plotly_chart(fig_activity, use_container_width=True)
+                
+                with col2:
+                    st.markdown("### Activity Impact Statistics")
+                    # Calculate correlations
+                    correlations = activity_impact_df[['total_steps', 'glucose_rise', 'carbs']].corr()
+                    st.dataframe(correlations.round(3))
+            
+            with tab4:
+                st.subheader("Summary Statistics")
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.markdown("### Glucose Metrics")
+                    metrics = {
+                        "Mean Glucose": f"{glucose_df['GlucoseValue'].mean():.1f} mg/dL",
+                        "Time in Range": f"{(glucose_df['GlucoseValue'] <= 140).mean()*100:.1f}%",
+                        "Standard Deviation": f"{glucose_df['GlucoseValue'].std():.1f}",
+                        "95th Percentile": f"{glucose_df['GlucoseValue'].quantile(0.95):.1f} mg/dL"
+                    }
+                    for metric, value in metrics.items():
+                        st.metric(metric, value)
+                
+                with col2:
+                    st.markdown("### Meal Metrics")
+                    meal_stats = meal_df.groupby('meal_type').agg({
+                        'carbohydrates': ['mean', 'std'],
+                        'calories': ['mean', 'std']
+                    }).round(1)
+                    st.dataframe(meal_stats)
+                
+                with col3:
+                    st.markdown("### Activity Metrics")
+                    daily_activity = activity_df.groupby(
+                        activity_df['start_time'].dt.date
+                    ).agg({
+                        'steps': 'sum',
+                        'flights': 'sum'
+                    }).describe().round(1)
+                    st.dataframe(daily_activity)
                 
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
