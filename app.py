@@ -982,25 +982,24 @@ def analyze_carb_categories(meal_df, glucose_df):
     fig.add_hline(y=50, line_dash="dash", line_color="rgba(255,0,0,0.5)", 
                   annotation_text="50 mg/dL rise")
     
-    # Calculate summary statistics with additional metrics
-    summary_stats = response_df.groupby(['meal_type', 'carb_category']).agg({
-        'glucose_rise': ['mean', 'std', 'count', 'median'],
-        'peak_glucose': ['mean', 'std', 'median'],
-        'actual_carbs': ['mean', 'min', 'max']
+    # Calculate summary statistics
+    summary_stats = pd.DataFrame({
+        'Avg Rise': response_df.groupby(['meal_type', 'carb_category'])['glucose_rise'].mean(),
+        'Median Rise': response_df.groupby(['meal_type', 'carb_category'])['glucose_rise'].median(),
+        'Std Dev': response_df.groupby(['meal_type', 'carb_category'])['glucose_rise'].std(),
+        'Count': response_df.groupby(['meal_type', 'carb_category'])['glucose_rise'].count(),
+        'Avg Carbs': response_df.groupby(['meal_type', 'carb_category'])['actual_carbs'].mean(),
+        'Min Carbs': response_df.groupby(['meal_type', 'carb_category'])['actual_carbs'].min(),
+        'Max Carbs': response_df.groupby(['meal_type', 'carb_category'])['actual_carbs'].max(),
+        '% Over 30': response_df.groupby(['meal_type', 'carb_category']).apply(
+            lambda x: (x['glucose_rise'] > 30).mean() * 100
+        ),
+        '% Over 50': response_df.groupby(['meal_type', 'carb_category']).apply(
+            lambda x: (x['glucose_rise'] > 50).mean() * 100
+        )
     }).round(1)
     
-    # Add percentage of responses exceeding thresholds
-    exceed_stats = response_df.groupby(['meal_type', 'carb_category']).agg({
-        'glucose_rise': [
-            ('pct_over_30', lambda x: (x > 30).mean() * 100),
-            ('pct_over_50', lambda x: (x > 50).mean() * 100)
-        ]
-    }).round(1)
-    
-    # Combine statistics
-    final_stats = pd.concat([summary_stats, exceed_stats], axis=1)
-    
-    return fig, final_stats, response_df
+    return fig, summary_stats, response_df
 
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
@@ -1333,13 +1332,12 @@ def run_streamlit_app():
                 - Best responses typically combine moderate carbs with adequate protein
                 - Activity plays a crucial role in managing post-meal glucose
                 """)
-
-            # The tab6 content remains the same, but let's enhance the statistical display:
+            # Update the tab6 content
             with tab6:
                 st.subheader("Carbohydrate Category Analysis")
                 
                 # Create the analysis
-                carb_fig, carb_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
+                carb_fig, summary_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
                 
                 # Show the visualization
                 st.plotly_chart(carb_fig, use_container_width=True)
@@ -1347,14 +1345,17 @@ def run_streamlit_app():
                 # Show key insights
                 st.markdown("### Key Insights")
                 
-                # Calculate overall statistics
+                # Calculate overall statistics by category
                 overall_stats = pd.DataFrame({
-                    'Category': carb_responses['carb_category'].unique(),
-                    'Avg Rise': carb_responses.groupby('carb_category')['glucose_rise'].mean().round(1),
-                    'Median Rise': carb_responses.groupby('carb_category')['glucose_rise'].median().round(1),
-                    '% Over 30mg/dL': (carb_responses.groupby('carb_category')['glucose_rise'] > 30).mean() * 100,
-                    '% Over 50mg/dL': (carb_responses.groupby('carb_category')['glucose_rise'] > 50).mean() * 100
-                }).set_index('Category')
+                    'Avg Rise': carb_responses.groupby('carb_category')['glucose_rise'].mean(),
+                    'Median Rise': carb_responses.groupby('carb_category')['glucose_rise'].median(),
+                    '% Over 30mg/dL': carb_responses.groupby('carb_category').apply(
+                        lambda x: (x['glucose_rise'] > 30).mean() * 100
+                    ),
+                    '% Over 50mg/dL': carb_responses.groupby('carb_category').apply(
+                        lambda x: (x['glucose_rise'] > 50).mean() * 100
+                    )
+                }).round(1)
                 
                 col1, col2 = st.columns(2)
                 
@@ -1371,8 +1372,16 @@ def run_streamlit_app():
                 
                 # Show detailed statistics
                 st.markdown("### Detailed Statistics by Meal Type and Category")
-                st.dataframe(carb_stats)
-
+                st.dataframe(summary_stats)
+                
+                # Add text explanation
+                st.markdown("""
+                ### Interpretation Guide:
+                - **Avg Rise**: Average glucose rise from baseline
+                - **% Over 30/50**: Percentage of meals causing rise above 30/50 mg/dL
+                - **Correlation**: Strength of relationship between actual carbs and glucose rise within each category
+                """)
+                
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         st.info("Please check if all required data files are present in the data directory.")
