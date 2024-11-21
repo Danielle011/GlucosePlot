@@ -1149,7 +1149,7 @@ def run_streamlit_app():
                 "Meal Response Analysis",
                 "Activity Impact",
                 "Summary Statistics",
-                "Meal Response Deep Dive"
+                "Meal Response Deep Dive",
                 "Carb Category Analysis"
             ])
             
