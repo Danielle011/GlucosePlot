@@ -1001,6 +1001,141 @@ def analyze_carb_categories(meal_df, glucose_df):
     
     return fig, summary_stats, response_df
 
+def analyze_carb_categories_with_activity(meal_df, glucose_df, activity_df):
+    """Analyze glucose response patterns by carb categories and activity level"""
+    
+    # Create carb categories using percentiles
+    meal_df['carb_category'] = pd.qcut(
+        meal_df['carbohydrates'], 
+        q=3, 
+        labels=['Low Carb', 'Medium Carb', 'High Carb']
+    )
+    
+    # Get the actual thresholds for reference
+    carb_thresh = pd.qcut(meal_df['carbohydrates'], q=3).unique()
+    thresh_values = [f"({int(cat.left)}-{int(cat.right)}g)" for cat in carb_thresh]
+    
+    # Analyze post-meal responses with activity
+    meal_responses = []
+    
+    for _, meal in meal_df.iterrows():
+        # Get 2-hour windows
+        meal_time = meal['meal_time']
+        meal_end = meal_time + pd.Timedelta(hours=2)
+        
+        # Get glucose data
+        glucose_window = glucose_df[
+            (glucose_df['DateTime'] >= meal_time) &
+            (glucose_df['DateTime'] <= meal_end)
+        ]
+        
+        # Get activity data
+        activity_window = activity_df[
+            (activity_df['start_time'] >= meal_time) &
+            (activity_df['start_time'] <= meal_end)
+        ]
+        
+        if not glucose_window.empty:
+            baseline = glucose_window.iloc[0]['GlucoseValue']
+            peak = glucose_window['GlucoseValue'].max()
+            
+            # Determine if period was active (any period >= 'Active')
+            was_active = any(activity_window['activity_level'].isin(['Active', 'Very Active', 'Intense']))
+            activity_status = 'Active' if was_active else 'Inactive'
+            
+            # Calculate activity metrics
+            total_steps = activity_window['steps'].sum()
+            max_activity_level = (activity_window['activity_level']
+                                .map({'Inactive': 0, 'Light': 1, 'Moderate': 2,
+                                     'Active': 3, 'Very Active': 4, 'Intense': 5})
+                                .max())
+            
+            meal_responses.append({
+                'meal_type': meal['meal_type'],
+                'carb_category': meal['carb_category'],
+                'activity_status': activity_status,
+                'actual_carbs': meal['carbohydrates'],
+                'peak_glucose': peak,
+                'baseline': baseline,
+                'glucose_rise': peak - baseline,
+                'total_steps': total_steps,
+                'max_activity_level': max_activity_level
+            })
+    
+    response_df = pd.DataFrame(meal_responses)
+    
+    # Create visualization
+    fig = go.Figure()
+    
+    # Colors for activity status
+    colors = {'Active': 'rgb(44, 160, 44)', 'Inactive': 'rgb(214, 39, 40)'}
+    
+    # Create box plots for each activity status and meal type
+    for activity_status in ['Active', 'Inactive']:
+        for meal_type in response_df['meal_type'].unique():
+            mask = (response_df['activity_status'] == activity_status) & \
+                  (response_df['meal_type'] == meal_type)
+            
+            name = f"{meal_type} ({activity_status})"
+            
+            fig.add_trace(go.Box(
+                x=response_df[mask]['carb_category'],
+                y=response_df[mask]['glucose_rise'],
+                name=name,
+                boxpoints='all',
+                jitter=0.3,
+                pointpos=-1.8,
+                marker=dict(
+                    color=colors[activity_status],
+                    opacity=0.6 if activity_status == 'Inactive' else 0.8
+                ),
+                hovertemplate=(
+                    f"{meal_type} ({activity_status})<br>" +
+                    "Carb Category: %{x}<br>" +
+                    "Glucose Rise: %{y:.1f} mg/dL<br>" +
+                    "<extra></extra>"
+                )
+            ))
+    
+    fig.update_layout(
+        title=dict(
+            text=(
+                "Glucose Rise by Carb Category, Meal Type, and Activity<br>" +
+                f"<span style='font-size:12px'>Categories: Low {thresh_values[0]}, " +
+                f"Medium {thresh_values[1]}, High {thresh_values[2]}</span>"
+            )
+        ),
+        xaxis_title="Carb Category",
+        yaxis_title="Glucose Rise (mg/dL)",
+        boxmode='group',
+        height=700,
+        template="plotly_white",
+        showlegend=True
+    )
+    
+    # Add reference lines
+    fig.add_hline(y=30, line_dash="dash", line_color="rgba(255,0,0,0.3)", 
+                  annotation_text="30 mg/dL rise")
+    fig.add_hline(y=50, line_dash="dash", line_color="rgba(255,0,0,0.5)", 
+                  annotation_text="50 mg/dL rise")
+    
+    # Calculate summary statistics with activity status
+    summary_stats = pd.DataFrame({
+        'Avg Rise': response_df.groupby(['meal_type', 'activity_status', 'carb_category'])['glucose_rise'].mean(),
+        'Median Rise': response_df.groupby(['meal_type', 'activity_status', 'carb_category'])['glucose_rise'].median(),
+        'Std Dev': response_df.groupby(['meal_type', 'activity_status', 'carb_category'])['glucose_rise'].std(),
+        'Count': response_df.groupby(['meal_type', 'activity_status', 'carb_category'])['glucose_rise'].count(),
+        'Avg Steps': response_df.groupby(['meal_type', 'activity_status', 'carb_category'])['total_steps'].mean(),
+        '% Over 30': response_df.groupby(['meal_type', 'activity_status', 'carb_category']).apply(
+            lambda x: (x['glucose_rise'] > 30).mean() * 100
+        ),
+        '% Over 50': response_df.groupby(['meal_type', 'activity_status', 'carb_category']).apply(
+            lambda x: (x['glucose_rise'] > 50).mean() * 100
+        )
+    }).round(1)
+    
+    return fig, summary_stats, response_df
+
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     
@@ -1332,56 +1467,43 @@ def run_streamlit_app():
                 - Best responses typically combine moderate carbs with adequate protein
                 - Activity plays a crucial role in managing post-meal glucose
                 """)
-            # Update the tab6 content
-            with tab6:
-                st.subheader("Carbohydrate Category Analysis")
-                
-                # Create the analysis
-                carb_fig, summary_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
-                
-                # Show the visualization
-                st.plotly_chart(carb_fig, use_container_width=True)
-                
-                # Show key insights
-                st.markdown("### Key Insights")
-                
-                # Calculate overall statistics by category
-                overall_stats = pd.DataFrame({
-                    'Avg Rise': carb_responses.groupby('carb_category')['glucose_rise'].mean(),
-                    'Median Rise': carb_responses.groupby('carb_category')['glucose_rise'].median(),
-                    '% Over 30mg/dL': carb_responses.groupby('carb_category').apply(
-                        lambda x: (x['glucose_rise'] > 30).mean() * 100
-                    ),
-                    '% Over 50mg/dL': carb_responses.groupby('carb_category').apply(
-                        lambda x: (x['glucose_rise'] > 50).mean() * 100
+
+                # Update tab6 content
+                with tab6:
+                    st.subheader("Carbohydrate and Activity Analysis")
+                    
+                    # Create the analysis
+                    carb_fig, summary_stats, response_df = analyze_carb_categories_with_activity(
+                        meal_df, glucose_df, activity_df
                     )
-                }).round(1)
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown("#### Overall Response by Category")
-                    st.dataframe(overall_stats)
-                
-                with col2:
-                    st.markdown("#### Correlation with Actual Carbs")
-                    correlations = carb_responses.groupby('carb_category').apply(
-                        lambda x: x['actual_carbs'].corr(x['glucose_rise'])
-                    ).round(3)
-                    st.dataframe(correlations)
-                
-                # Show detailed statistics
-                st.markdown("### Detailed Statistics by Meal Type and Category")
-                st.dataframe(summary_stats)
-                
-                # Add text explanation
-                st.markdown("""
-                ### Interpretation Guide:
-                - **Avg Rise**: Average glucose rise from baseline
-                - **% Over 30/50**: Percentage of meals causing rise above 30/50 mg/dL
-                - **Correlation**: Strength of relationship between actual carbs and glucose rise within each category
-                """)
-                
+                    
+                    # Show the visualization
+                    st.plotly_chart(carb_fig, use_container_width=True)
+                    
+                    # Show activity distribution
+                    st.markdown("### Activity Distribution")
+                    activity_dist = pd.DataFrame({
+                        'Total Meals': response_df.groupby(['meal_type', 'activity_status'])['glucose_rise'].count()
+                    }).unstack()
+                    st.dataframe(activity_dist)
+                    
+                    # Show detailed statistics
+                    st.markdown("### Detailed Statistics by Meal Type, Activity, and Carb Category")
+                    st.dataframe(summary_stats)
+                    
+                    # Calculate and show activity impact
+                    st.markdown("### Activity Impact Analysis")
+                    impact_analysis = response_df.groupby('carb_category').apply(
+                        lambda x: pd.Series({
+                            'Active vs Inactive Difference': 
+                                x[x['activity_status']=='Active']['glucose_rise'].mean() - 
+                                x[x['activity_status']=='Inactive']['glucose_rise'].mean(),
+                            'Active Count': (x['activity_status']=='Active').sum(),
+                            'Inactive Count': (x['activity_status']=='Inactive').sum()
+                        })
+                    ).round(1)
+                    st.dataframe(impact_analysis)
+
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
         st.info("Please check if all required data files are present in the data directory.")
