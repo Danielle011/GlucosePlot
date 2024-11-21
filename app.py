@@ -929,29 +929,37 @@ def analyze_carb_categories(meal_df, glucose_df):
     # Create visualization
     fig = go.Figure()
     
-    # Create box plots for each category
+    # Create box and scatter plots for each meal type
+    colors = {'Breakfast': 'rgb(31, 119, 180)', 
+             'Lunch': 'rgb(44, 160, 44)', 
+             'Dinner': 'rgb(214, 39, 40)'}
+    
     for meal_type in response_df['meal_type'].unique():
-        mask = response_df['meal_type'] == meal_type
+        meal_data = response_df[response_df['meal_type'] == meal_type]
         
+        # Add box plot
         fig.add_trace(go.Box(
-            x=response_df[mask]['carb_category'],
-            y=response_df[mask]['glucose_rise'],
+            x=meal_data['carb_category'],
+            y=meal_data['glucose_rise'],
             name=meal_type,
             boxpoints='all',
             jitter=0.3,
             pointpos=-1.8,
-            marker_color=response_df[mask]['actual_carbs'],
-            marker_colorscale='YlOrRd',
-            marker_showscale=True,
-            marker_colorbar_title='Actual Carbs (g)',
+            marker=dict(
+                color=colors[meal_type],
+                size=8,
+                opacity=0.6
+            ),
             hovertemplate=(
                 "Meal Type: %{fullData.name}<br>" +
                 "Carb Category: %{x}<br>" +
                 "Glucose Rise: %{y:.1f} mg/dL<br>" +
                 "<extra></extra>"
-            )
+            ),
+            showlegend=True
         ))
     
+    # Update layout
     fig.update_layout(
         title=dict(
             text=(
@@ -964,8 +972,8 @@ def analyze_carb_categories(meal_df, glucose_df):
         yaxis_title="Glucose Rise (mg/dL)",
         boxmode='group',
         height=600,
-        showlegend=True,
-        template="plotly_white"
+        template="plotly_white",
+        showlegend=True
     )
     
     # Add reference lines
@@ -974,14 +982,25 @@ def analyze_carb_categories(meal_df, glucose_df):
     fig.add_hline(y=50, line_dash="dash", line_color="rgba(255,0,0,0.5)", 
                   annotation_text="50 mg/dL rise")
     
-    # Calculate summary statistics
+    # Calculate summary statistics with additional metrics
     summary_stats = response_df.groupby(['meal_type', 'carb_category']).agg({
-        'glucose_rise': ['mean', 'std', 'count'],
-        'peak_glucose': ['mean', 'std'],
+        'glucose_rise': ['mean', 'std', 'count', 'median'],
+        'peak_glucose': ['mean', 'std', 'median'],
         'actual_carbs': ['mean', 'min', 'max']
     }).round(1)
     
-    return fig, summary_stats, response_df
+    # Add percentage of responses exceeding thresholds
+    exceed_stats = response_df.groupby(['meal_type', 'carb_category']).agg({
+        'glucose_rise': [
+            ('pct_over_30', lambda x: (x > 30).mean() * 100),
+            ('pct_over_50', lambda x: (x > 50).mean() * 100)
+        ]
+    }).round(1)
+    
+    # Combine statistics
+    final_stats = pd.concat([summary_stats, exceed_stats], axis=1)
+    
+    return fig, final_stats, response_df
 
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
@@ -1315,36 +1334,44 @@ def run_streamlit_app():
                 - Activity plays a crucial role in managing post-meal glucose
                 """)
 
+            # The tab6 content remains the same, but let's enhance the statistical display:
             with tab6:
                 st.subheader("Carbohydrate Category Analysis")
-
+                
                 # Create the analysis
                 carb_fig, carb_stats, carb_responses = analyze_carb_categories(meal_df, glucose_df)
                 
                 # Show the visualization
                 st.plotly_chart(carb_fig, use_container_width=True)
                 
-                # Show summary statistics
-                st.markdown("### Summary Statistics by Category")
-                st.dataframe(carb_stats)
+                # Show key insights
+                st.markdown("### Key Insights")
                 
-                # Add statistical analysis
-                st.markdown("### Statistical Analysis")
+                # Calculate overall statistics
+                overall_stats = pd.DataFrame({
+                    'Category': carb_responses['carb_category'].unique(),
+                    'Avg Rise': carb_responses.groupby('carb_category')['glucose_rise'].mean().round(1),
+                    'Median Rise': carb_responses.groupby('carb_category')['glucose_rise'].median().round(1),
+                    '% Over 30mg/dL': (carb_responses.groupby('carb_category')['glucose_rise'] > 30).mean() * 100,
+                    '% Over 50mg/dL': (carb_responses.groupby('carb_category')['glucose_rise'] > 50).mean() * 100
+                }).set_index('Category')
+                
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    # Correlation between actual carbs and response within categories
-                    st.markdown("#### Correlation within Categories")
+                    st.markdown("#### Overall Response by Category")
+                    st.dataframe(overall_stats)
+                
+                with col2:
+                    st.markdown("#### Correlation with Actual Carbs")
                     correlations = carb_responses.groupby('carb_category').apply(
                         lambda x: x['actual_carbs'].corr(x['glucose_rise'])
                     ).round(3)
                     st.dataframe(correlations)
                 
-                with col2:
-                    # Distribution of responses
-                    st.markdown("#### Response Distribution")
-                    response_dist = carb_responses.groupby('carb_category')['glucose_rise'].describe()
-                    st.dataframe(response_dist.round(1))
+                # Show detailed statistics
+                st.markdown("### Detailed Statistics by Meal Type and Category")
+                st.dataframe(carb_stats)
 
     except Exception as e:
         st.error(f"Error loading data: {str(e)}")
