@@ -44,7 +44,7 @@ def load_activity_data():
 def load_workout_data():
     """Load workout data"""
     return pd.read_csv(
-        'data/combined_workouts.csv',
+        'combined_workouts.csv',
         parse_dates=['start_time', 'end_time']
     )
 
@@ -1194,7 +1194,7 @@ def run_streamlit_app():
                 )
                 workout_glucose_df = glucose_df.copy()  # Use the same glucose data
                 heart_rate_df = pd.read_csv(
-                    'heart_rate_data.csv',
+                    'data/heart_rate_data.csv',
                     parse_dates=['start_date']
                 )
                 workout_meal_df = meal_df.copy()  # Use the same meal data
