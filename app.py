@@ -40,6 +40,38 @@ def load_activity_data():
         parse_dates=['start_time', 'end_time']
     )
 
+@st.cache_data(ttl=3600)
+def load_workout_data():
+    """Load workout data"""
+    return pd.read_csv(
+        'combined_workouts.csv',
+        parse_dates=['start_time', 'end_time']
+    )
+
+@st.cache_data(ttl=3600)
+def load_workout_glucose_data():
+    """Load glucose data for workouts"""
+    return pd.read_csv(
+        'processed_glucose_data.csv',
+        parse_dates=['DateTime']
+    )
+
+@st.cache_data(ttl=3600)
+def load_workout_heart_rate_data():
+    """Load heart rate data for workouts"""
+    return pd.read_csv(
+        'heart_rate_data.csv',
+        parse_dates=['start_date']
+    )
+
+@st.cache_data(ttl=3600)
+def load_workout_meal_data():
+    """Load meal data for workouts"""
+    return pd.read_csv(
+        'processed_meal_data.csv',
+        parse_dates=['meal_time']
+    )
+
 def get_activity_color_gradient(activity_level):
     """Returns a color based on activity level using a gradient scale"""
     level_map = {
@@ -1140,16 +1172,38 @@ def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
     
     # Add page navigation in sidebar
-    page = st.sidebar.radio("Navigate", ["Meal Analysis Dashboard", "EDA Dashboard"])
-    
+    page = st.sidebar.radio(
+        "Navigate", 
+        ["Meal Analysis Dashboard", "Workout Analysis Dashboard", "EDA Dashboard"]
+    )
+
     try:
         # Load data with progress indicators
         with st.spinner('Loading data...'):
+            # Load common data
             glucose_df = load_glucose_data()
             meal_df = load_meal_data()
             activity_df = load_activity_data()
             full_meal_df = load_full_meal_data()
-        
+            
+            # Load workout-specific data if needed
+            if page == "Workout Analysis Dashboard":
+                workouts_df = pd.read_csv(
+                    'combined_workouts.csv',
+                    parse_dates=['start_time', 'end_time']
+                )
+                workout_glucose_df = glucose_df.copy()  # Use the same glucose data
+                heart_rate_df = pd.read_csv(
+                    'heart_rate_data.csv',
+                    parse_dates=['start_date']
+                )
+                workout_meal_df = meal_df.copy()  # Use the same meal data
+                
+                # Ensure timezone consistency
+                if workouts_df['start_time'].dt.tz is None:
+                    workouts_df['start_time'] = workouts_df['start_time'].dt.tz_localize(KST)
+                    workouts_df['end_time'] = workouts_df['end_time'].dt.tz_localize(KST)
+
         if page == "Meal Analysis Dashboard":
             st.title('Blood Glucose Analysis Dashboard')
             
@@ -1203,50 +1257,11 @@ def run_streamlit_app():
                     selected_meal['measurement_number'],
                     full_meal_df
                 )
-
+                
                 # Calculate window duration
                 window_duration = (end_time - selected_meal['meal_time']).total_seconds() / 60
                 
-                # Create legend-style activity guide
-                st.markdown(
-                    """
-                    <div style="
-                        display: inline-flex;
-                        align-items: center;
-                        padding: 8px 16px;
-                        background-color: white;
-                        border: 1px solid #333;
-                    ">
-                        <div style="display: flex; gap: 20px; align-items: center;">
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                level_map = {
-                    'Inactive': 0.1,
-                    'Light': 0.2,
-                    'Moderate': 0.3,
-                    'Active': 0.7,
-                    'Very Active': 0.85,
-                    'Intense': 1.0
-                }
-
-                for level, opacity in level_map.items():
-                    st.markdown(
-                        f'<div style="display: flex; align-items: center; gap: 5px;">'
-                        f'<div style="'
-                        f'width: 15px;'
-                        f'height: 15px;'
-                        f'background-color: rgba(255,0,0,{opacity});'
-                        f'"></div>'
-                        f'<span style="font-size: 0.9em;">{level}</span>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-
-                st.markdown("</div></div>", unsafe_allow_html=True)
-
-                # Display chart
+                # Create and display the plot
                 fig = create_glucose_meal_activity_chart_gradient(
                     glucose_window, 
                     pd.DataFrame([selected_meal]), 
@@ -1291,6 +1306,66 @@ def run_streamlit_app():
             else:
                 st.info('No meals found in the selected date range.')
 
+        elif page == "Workout Analysis Dashboard":
+            st.title('Workout Analysis Dashboard')
+            
+            # Create workout selection dropdown
+            workout_options = {
+                f"{row['start_time'].strftime('%Y-%m-%d %H:%M')} - "
+                f"{row['end_time'].strftime('%H:%M')}, {row['type']}": idx
+                for idx, row in workouts_df.iterrows()
+            }
+            
+            selected_workout_label = st.selectbox(
+                'Select a workout to view:',
+                options=list(workout_options.keys())
+            )
+            
+            selected_idx = workout_options[selected_workout_label]
+            
+            # Create the workout plot
+            fig = create_workout_plot(
+                workouts_df, 
+                heart_rate_df, 
+                workout_glucose_df, 
+                workout_meal_df, 
+                selected_idx
+            )
+            
+            # Display the plot
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Add workout metrics in sidebar
+            workout = workouts_df.iloc[selected_idx]
+            
+            st.sidebar.markdown("### Workout Information")
+            metrics = []
+            if pd.notna(workout.get('total_distance')):
+                metrics.append(f"Distance: {workout['total_distance']:.2f}")
+            if pd.notna(workout.get('total_energy_burned')):
+                metrics.append(f"Energy: {workout['total_energy_burned']:.0f}")
+            if pd.notna(workout.get('avg_mets')):
+                metrics.append(f"Avg METs: {workout['avg_mets']:.1f}")
+            if metrics:
+                st.sidebar.markdown("#### Activity Metrics")
+                for metric in metrics:
+                    st.sidebar.markdown(f"- {metric}")
+                    
+            if pd.notna(workout.get('avg_heart_rate')):
+                st.sidebar.markdown("#### Heart Rate Stats")
+                st.sidebar.markdown(
+                    f"- Avg: {workout['avg_heart_rate']:.0f} bpm\n"
+                    f"- Min: {workout['min_heart_rate']:.0f} bpm\n"
+                    f"- Max: {workout['max_heart_rate']:.0f} bpm"
+                )
+            
+            # Add date range information
+            st.sidebar.markdown("### Dataset Information")
+            workout_date_min = workouts_df['start_time'].dt.date.min()
+            workout_date_max = workouts_df['start_time'].dt.date.max()
+            st.sidebar.markdown(f"Available Date Range:\n"
+                              f"{workout_date_min} to {workout_date_max}\n\n"
+                              f"Total Workouts: {len(workouts_df):,}")
 
         # Modify the EDA section in your run_streamlit_app function
         # Replace the EDA dashboard section with this:
