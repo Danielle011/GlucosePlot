@@ -118,6 +118,47 @@ def get_data_for_meal(glucose_df, activity_df, meal_time, meal_number, full_meal
     
     return glucose_window, activity_window, end_time
 
+def preprocess_workout_data(workouts_df, heart_rate_df, glucose_df, meal_df, KST):
+    """Preprocess all workout-related data with consistent column names and timezones"""
+    # Process workout data
+    workouts_df = workouts_df.copy()
+    for col in ['start_time', 'end_time']:
+        if workouts_df[col].dt.tz is None:
+            workouts_df[col] = workouts_df[col].dt.tz_localize(KST)
+        else:
+            workouts_df[col] = workouts_df[col].dt.tz_convert(KST)
+    
+    # Process heart rate data
+    heart_rate_df = heart_rate_df.copy()
+    heart_rate_df['timestamp'] = pd.to_datetime(heart_rate_df['start_date'])
+    if heart_rate_df['timestamp'].dt.tz is None:
+        heart_rate_df['timestamp'] = heart_rate_df['timestamp'].dt.tz_localize(KST)
+    else:
+        heart_rate_df['timestamp'] = heart_rate_df['timestamp'].dt.tz_convert(KST)
+    heart_rate_df['heart_rate'] = heart_rate_df['value']
+    heart_rate_df = heart_rate_df[['timestamp', 'heart_rate']]
+    
+    # Process glucose data
+    glucose_df = glucose_df.copy()
+    glucose_df['timestamp'] = pd.to_datetime(glucose_df['DateTime'])
+    if glucose_df['timestamp'].dt.tz is None:
+        glucose_df['timestamp'] = glucose_df['timestamp'].dt.tz_localize(KST)
+    else:
+        glucose_df['timestamp'] = glucose_df['timestamp'].dt.tz_convert(KST)
+    glucose_df['glucose'] = glucose_df['GlucoseValue']
+    glucose_df = glucose_df[['timestamp', 'glucose']]
+    
+    # Process meal data
+    meal_df = meal_df.copy()
+    meal_df['timestamp'] = pd.to_datetime(meal_df['meal_time'])
+    if meal_df['timestamp'].dt.tz is None:
+        meal_df['timestamp'] = meal_df['timestamp'].dt.tz_localize(KST)
+    else:
+        meal_df['timestamp'] = meal_df['timestamp'].dt.tz_convert(KST)
+    meal_df = meal_df[['timestamp', 'food_name']]
+    
+    return workouts_df, heart_rate_df, glucose_df, meal_df
+
 def create_glucose_meal_activity_chart_gradient(glucose_window, meal_data, activity_window, end_time, selected_idx=0):
     """Creates chart with gradient colors for activities"""
     meal_time = meal_data.iloc[selected_idx]['meal_time']
@@ -1495,63 +1536,77 @@ def run_streamlit_app():
         elif page == "Workout Analysis Dashboard":
             st.title('Workout Analysis Dashboard')
             
-            # Create workout selection dropdown
-            workout_options = {
-                f"{row['start_time'].strftime('%Y-%m-%d %H:%M')} - "
-                f"{row['end_time'].strftime('%H:%M')}, {row['type']}": idx
-                for idx, row in workouts_df.iterrows()
-            }
-            
-            selected_workout_label = st.selectbox(
-                'Select a workout to view:',
-                options=list(workout_options.keys())
-            )
-            
-            selected_idx = workout_options[selected_workout_label]
-            
-            # Create the workout plot
-            fig = create_workout_plot(
-                workouts_df, 
-                heart_rate_df, 
-                workout_glucose_df, 
-                workout_meal_df, 
-                selected_idx
-            )
-            
-            # Display the plot
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Add workout metrics in sidebar
-            workout = workouts_df.iloc[selected_idx]
-            
-            st.sidebar.markdown("### Workout Information")
-            metrics = []
-            if pd.notna(workout.get('total_distance')):
-                metrics.append(f"Distance: {workout['total_distance']:.2f}")
-            if pd.notna(workout.get('total_energy_burned')):
-                metrics.append(f"Energy: {workout['total_energy_burned']:.0f}")
-            if pd.notna(workout.get('avg_mets')):
-                metrics.append(f"Avg METs: {workout['avg_mets']:.1f}")
-            if metrics:
-                st.sidebar.markdown("#### Activity Metrics")
-                for metric in metrics:
-                    st.sidebar.markdown(f"- {metric}")
-                    
-            if pd.notna(workout.get('avg_heart_rate')):
-                st.sidebar.markdown("#### Heart Rate Stats")
-                st.sidebar.markdown(
-                    f"- Avg: {workout['avg_heart_rate']:.0f} bpm\n"
-                    f"- Min: {workout['min_heart_rate']:.0f} bpm\n"
-                    f"- Max: {workout['max_heart_rate']:.0f} bpm"
+            try:
+                # Preprocess data for workout analysis
+                workouts_df, heart_rate_df, workout_glucose_df, workout_meal_df = preprocess_workout_data(
+                    workouts_df,
+                    heart_rate_df,
+                    workout_glucose_df,
+                    workout_meal_df,
+                    KST
                 )
+                
+                # Create workout selection dropdown
+                workout_options = {
+                    f"{row['start_time'].strftime('%Y-%m-%d %H:%M')} - "
+                    f"{row['end_time'].strftime('%H:%M')}, {row['type']}": idx
+                    for idx, row in workouts_df.iterrows()
+                }
+                
+                selected_workout_label = st.selectbox(
+                    'Select a workout to view:',
+                    options=list(workout_options.keys())
+                )
+                
+                selected_idx = workout_options[selected_workout_label]
+                
+                # Create the workout plot
+                fig = create_workout_plot(
+                    workouts_df, 
+                    heart_rate_df, 
+                    workout_glucose_df, 
+                    workout_meal_df, 
+                    selected_idx
+                )
+                
+                # Display the plot
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Add workout metrics in sidebar
+                workout = workouts_df.iloc[selected_idx]
+                
+                st.sidebar.markdown("### Workout Information")
+                metrics = []
+                if pd.notna(workout.get('total_distance')):
+                    metrics.append(f"Distance: {workout['total_distance']:.2f}")
+                if pd.notna(workout.get('total_energy_burned')):
+                    metrics.append(f"Energy: {workout['total_energy_burned']:.0f}")
+                if pd.notna(workout.get('avg_mets')):
+                    metrics.append(f"Avg METs: {workout['avg_mets']:.1f}")
+                if metrics:
+                    st.sidebar.markdown("#### Activity Metrics")
+                    for metric in metrics:
+                        st.sidebar.markdown(f"- {metric}")
+                        
+                if pd.notna(workout.get('avg_heart_rate')):
+                    st.sidebar.markdown("#### Heart Rate Stats")
+                    st.sidebar.markdown(
+                        f"- Avg: {workout['avg_heart_rate']:.0f} bpm\n"
+                        f"- Min: {workout['min_heart_rate']:.0f} bpm\n"
+                        f"- Max: {workout['max_heart_rate']:.0f} bpm"
+                    )
+                
+                # Add date range information
+                st.sidebar.markdown("### Dataset Information")
+                workout_date_min = workouts_df['start_time'].dt.date.min()
+                workout_date_max = workouts_df['start_time'].dt.date.max()
+                st.sidebar.markdown(f"Available Date Range:\n"
+                                f"{workout_date_min} to {workout_date_max}\n\n"
+                                f"Total Workouts: {len(workouts_df):,}")
             
-            # Add date range information
-            st.sidebar.markdown("### Dataset Information")
-            workout_date_min = workouts_df['start_time'].dt.date.min()
-            workout_date_max = workouts_df['start_time'].dt.date.max()
-            st.sidebar.markdown(f"Available Date Range:\n"
-                              f"{workout_date_min} to {workout_date_max}\n\n"
-                              f"Total Workouts: {len(workouts_df):,}")
+            except Exception as e:
+                st.error(f"Error processing workout data: {str(e)}")
+                st.info("Please check the format of your workout data files.")
 
         # Modify the EDA section in your run_streamlit_app function
         # Replace the EDA dashboard section with this:
