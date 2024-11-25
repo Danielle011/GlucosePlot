@@ -5,6 +5,8 @@ from datetime import timezone, timedelta
 import numpy as np
 import plotly.express as px
 import plotly.figure_factory as ff
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # Set timezone
 KST = timezone(timedelta(hours=9))
@@ -1167,6 +1169,190 @@ def analyze_carb_categories_with_activity(meal_df, glucose_df, activity_df):
     }).round(1)
     
     return fig, summary_stats, response_df
+
+# Add these functions before run_streamlit_app()
+
+def find_recent_meal(workout_start, meal_df):
+    """
+    Find the most recent meal within 2 hours before workout
+    """
+    two_hours_before = workout_start - pd.Timedelta(hours=2)
+    mask = (meal_df['timestamp'] >= two_hours_before) & (meal_df['timestamp'] <= workout_start)
+    recent_meals = meal_df[mask]
+    
+    if not recent_meals.empty:
+        most_recent = recent_meals.iloc[recent_meals['timestamp'].argmax()]
+        time_diff = int((workout_start - most_recent['timestamp']).total_seconds() / 60)
+        return f"Last meal ({time_diff} min before): {most_recent['timestamp'].strftime('%Y-%m-%d %H:%M')} {most_recent['food_name']}"
+    return None
+
+def create_workout_plot(workouts_df, heart_rate_df, glucose_df, meal_df, selected_workout_idx=0):
+    """
+    Create interactive plot for selected workout
+    """
+    # Get selected workout data
+    workout = workouts_df.iloc[selected_workout_idx]
+    start_time = workout['start_time']
+    end_time = workout['end_time']
+    window_end = end_time + pd.Timedelta(hours=2)
+    
+    # Filter data for the time window
+    mask_hr = (heart_rate_df['timestamp'] >= start_time) & (heart_rate_df['timestamp'] <= window_end)
+    mask_glucose = (glucose_df['timestamp'] >= start_time) & (glucose_df['timestamp'] <= window_end)
+    
+    hr_data = heart_rate_df[mask_hr]
+    glucose_data = glucose_df[mask_glucose]
+    
+    # Create activity metrics string
+    metrics = []
+    if pd.notna(workout.get('total_distance')):
+        metrics.append(f"Distance: {workout['total_distance']:.2f}")
+    if pd.notna(workout.get('total_energy_burned')):
+        metrics.append(f"Energy: {workout['total_energy_burned']:.0f}")
+    if pd.notna(workout.get('avg_mets')):
+        metrics.append(f"Avg METs: {workout['avg_mets']:.1f}")
+    activity_metrics = ", ".join(metrics)
+    
+    # Find recent meal
+    meal_info = find_recent_meal(start_time, meal_df)
+    
+    # Find meals after workout
+    mask_meals = (meal_df['timestamp'] >= end_time) & (meal_df['timestamp'] <= window_end)
+    after_meals = meal_df[mask_meals]
+    
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    
+    # Add workout period highlight
+    fig.add_shape(
+        type="rect",
+        x0=start_time,
+        x1=end_time,
+        y0=0,
+        y1=1,
+        yref="paper",
+        fillcolor="rgba(128, 128, 128, 0.1)",
+        line=dict(width=0),
+        layer="below"
+    )
+    
+    # Add glucose line
+    if not glucose_data.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=glucose_data['timestamp'],
+                y=glucose_data['glucose'],
+                name='Glucose',
+                line=dict(color='#2E86C1', width=2),
+                hovertemplate='Time: %{x|%H:%M}<br>Glucose: %{y:.1f} mg/dL<extra></extra>'
+            ),
+            secondary_y=False
+        )
+    
+    # Add heart rate line
+    if not hr_data.empty:
+        fig.add_trace(
+            go.Scatter(
+                x=hr_data['timestamp'],
+                y=hr_data['heart_rate'],
+                name='Heart Rate',
+                line=dict(color='#E74C3C', width=2, dash='3.2'),
+                hovertemplate='Time: %{x|%H:%M}<br>Heart Rate: %{y:.0f} bpm<extra></extra>'
+            ),
+            secondary_y=True
+        )
+    
+    # Add workout end line
+    fig.add_shape(
+        type="line",
+        x0=end_time,
+        x1=end_time,
+        y0=0,
+        y1=1,
+        yref="paper",
+        line=dict(color="gray", width=1, dash="dot")
+    )
+    
+    fig.add_annotation(
+        x=end_time,
+        y=1,
+        text="Workout End",
+        showarrow=False,
+        yref="paper",
+        yshift=10
+    )
+    
+    # Add meal lines and annotations
+    for _, meal in after_meals.iterrows():
+        fig.add_shape(
+            type="line",
+            x0=meal['timestamp'],
+            x1=meal['timestamp'],
+            y0=0,
+            y1=1,
+            yref="paper",
+            line=dict(color="green", width=1, dash="dot")
+        )
+        
+        fig.add_annotation(
+            x=meal['timestamp'],
+            y=0.9,
+            text=f"Meal: {meal['timestamp'].strftime('%H:%M')}<br>{meal['food_name']}",
+            showarrow=False,
+            yref="paper",
+            yshift=10,
+            align='left'
+        )
+    
+    # Update layout
+    workout_time = f"{start_time.strftime('%Y-%m-%d %H:%M')} - {end_time.strftime('%H:%M')}"
+    title = f"Workout: {workout['type']}<br><sup>{workout_time}</sup>"
+    if activity_metrics:
+        title += f"<br><sup>{activity_metrics}</sup>"
+    if pd.notna(workout.get('avg_heart_rate')):
+        hr_stats = f"Heart Rate (avg/min/max): {workout['avg_heart_rate']:.0f}/{workout['min_heart_rate']:.0f}/{workout['max_heart_rate']:.0f}"
+        title += f"<br><sup>{hr_stats}</sup>"
+    if meal_info:
+        title += f"<br><sup>{meal_info}</sup>"
+    
+    fig.update_layout(
+        title=dict(
+            text=title,
+            y=0.95,
+            yanchor='top'
+        ),
+        margin=dict(t=120),
+        xaxis_title="Time",
+        plot_bgcolor='#F8FBFE',
+        paper_bgcolor='white',
+        hovermode='x unified',
+        showlegend=True,
+        height=600,
+        xaxis=dict(
+            tickformat='%H:%M',
+            title_text="Time",
+            gridcolor='rgba(220,220,220,0.4)',
+            showgrid=True
+        )
+    )
+    
+    # Update y-axes with fixed ranges
+    fig.update_yaxes(
+        title_text="Glucose (mg/dL)",
+        secondary_y=False,
+        range=[60, 190],
+        gridcolor='rgba(220,220,220,0.4)',
+        showgrid=True
+    )
+    fig.update_yaxes(
+        title_text="Heart Rate (bpm)",
+        secondary_y=True,
+        range=[50, 190],
+        gridcolor='rgba(220,220,220,0.4)',
+        showgrid=True
+    )
+    
+    return fig
 
 def run_streamlit_app():
     st.set_page_config(page_title="Glucose Analysis", layout="wide")
