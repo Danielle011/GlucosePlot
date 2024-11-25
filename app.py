@@ -1189,7 +1189,7 @@ def run_streamlit_app():
             # Load workout-specific data if needed
             if page == "Workout Analysis Dashboard":
                 workouts_df = pd.read_csv(
-                    'combined_workouts.csv',
+                    'data/combined_workouts.csv',
                     parse_dates=['start_time', 'end_time']
                 )
                 workout_glucose_df = glucose_df.copy()  # Use the same glucose data
