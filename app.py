@@ -44,7 +44,7 @@ def load_activity_data():
 def load_workout_data():
     """Load workout data"""
     return pd.read_csv(
-        'combined_workouts.csv',
+        'data/combined_workouts.csv',
         parse_dates=['start_time', 'end_time']
     )
 
